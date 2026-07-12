@@ -265,7 +265,7 @@ Pre-modeling audit confirms episode counts are **real but concentrated**, not co
 
 ## 11. Locked project specification
 
-**Title:** *What Is Lost Between Glucose Checks? Predicting Hypoglycemia from Continuous and Intermittent Glucose Observations*
+**Title:** *Glucose Gap: What Is Lost Between Glucose Checks?*
 
 **Primary research question:** How much does near-term hypoglycemia-prediction performance decline when a model receives only intermittent user-initiated scans instead of continuous historical CGM?
 

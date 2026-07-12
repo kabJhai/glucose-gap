@@ -1,8 +1,8 @@
-# Glucose Gap
+# Glucose Gap: What Is Lost Between Glucose Checks?
 
-### Presentation: What Is Lost Between Glucose Checks?
+### Predicting Hypoglycemia from Continuous and Intermittent Glucose Observations
 
-**Predicting near-term hypoglycemia from continuous and intermittent glucose observations**
+**Presentation deck.**
 
 **Format:** Copy each slide block into Google Slides or PowerPoint.  
 **Speaker notes** appear under **Speaker notes:** below each slide.  
@@ -16,7 +16,11 @@
 
 > This project shows that the information gap between glucose checks is measurable: models predict near-term hypoglycemia much better from continuous CGM history than from intermittent user-initiated scans, even when both come from the same sensor system.
 
-## Slide 1: Personal motivation
+## Slide 1: Title and personal motivation
+
+**Glucose Gap: What Is Lost Between Glucose Checks?**
+
+Predicting Hypoglycemia from Continuous and Intermittent Glucose Observations
 
 **What happens between glucose checks?**
 
@@ -92,7 +96,7 @@ Intermittent scan history -> Sparse model -+
 **Output:** `feasibility_audit/feasibility_report.md`
 
 **Speaker notes:**
-- Audit took ~8-9 minutes; it is Step 1 in `python run_tutorial.py`.
+- Audit took ~8-9 minutes; run `python feasibility_audit/data_audit.py`.
 - Two participants (HUPA0027P, HUPA0028P) contribute ~67% of hypoglycemia episodes. We pre-register a sensitivity analysis before seeing model results.
 - Teaching point for peers: always ask *who* is in your positive class before tuning hyperparameters.
 - See audit figures in `feasibility_audit/figures/` after a full run.
@@ -234,13 +238,15 @@ Also report: AUROC, recall, precision, F1 (threshold tuned on inner validation)
 **Anyone following the tutorial can rerun and verify.**
 
 ```bash
-python run_tutorial.py              # full pipeline
-python scripts/verify_results.py      # check against reference metrics
+python feasibility_audit/data_audit.py
+python -m modeling.train --skip-gru
+python scripts/verify_results.py
 ```
 
 | Mechanism | File / location |
 |-----------|-----------------|
-| One-command orchestration | `run_tutorial.py` |
+| Audit pipeline | `feasibility_audit/data_audit.py` |
+| Modeling pipeline | `modeling/train.py` |
 | Fixed hyperparameters | `modeling/config.py` (seed 42) |
 | Saved folds (assigned once) | `fold_assignments.csv` |
 | Intermediate artifacts | `paired_windows.csv`, feature CSVs, OOF predictions |

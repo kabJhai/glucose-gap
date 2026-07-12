@@ -1,6 +1,6 @@
-# Glucose Gap
+# Glucose Gap: What Is Lost Between Glucose Checks?
 
-### What Is Lost Between Glucose Checks?
+### Predicting Hypoglycemia from Continuous and Intermittent Glucose Observations
 
 A reproducible healthcare ML/DL study measuring how much near-term hypoglycemia prediction performance is lost when a model sees only intermittent user-initiated glucose scans instead of continuous CGM history.
 
@@ -13,11 +13,9 @@ This project uses the [HUPA-UCM Diabetes Dataset](https://data.mendeley.com/data
 ![Dataset](https://img.shields.io/badge/Dataset-HUPA--UCM-green)
 ![License](https://img.shields.io/badge/License-MIT-lightgrey)
 
-**Tagline:** Measuring the predictive cost of intermittent glucose monitoring with leakage-safe machine learning and deep learning.
+**Repository:** https://github.com/kabJhai/glucose-gap
 
-**GitHub description:** A reproducible ML/DL study comparing near-term hypoglycemia prediction from continuous CGM history and intermittent user-initiated glucose scans using the HUPA-UCM dataset.
-
-**Suggested topics:** `machine-learning` `deep-learning` `healthcare-ai` `diabetes` `hypoglycemia` `continuous-glucose-monitoring` `xgboost` `gru` `time-series` `explainable-ai` `shap` `reproducible-research` `python`
+Measuring the predictive cost of intermittent glucose monitoring with leakage-safe machine learning and deep learning.
 
 ## Headline result
 
@@ -227,7 +225,7 @@ Sparse-model performance is reported separately for all eligible windows, window
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/<your-username>/glucose-gap.git
+git clone https://github.com/kabJhai/glucose-gap.git
 cd glucose-gap
 ```
 
@@ -254,19 +252,19 @@ On Windows: `.venv\Scripts\activate`
 
 On macOS, install OpenMP if XGBoost requires it: `brew install libomp`
 
-### 4. Run the project
+### 4. Run the pipeline
+
+**Step 1: Feasibility audit** (~8-9 min)
 
 ```bash
-python run_tutorial.py
+python feasibility_audit/data_audit.py
 ```
 
-Partial runs:
+**Step 2: Modeling experiments**
 
 ```bash
-python run_tutorial.py --audit-only
-python run_tutorial.py --model-only
-python -m modeling.train --skip-gru
-python -m modeling.train
+python -m modeling.train --skip-gru    # primary comparison (faster)
+python -m modeling.train               # includes GRU experiment
 ```
 
 ### 5. Verify results
@@ -277,7 +275,7 @@ python scripts/verify_results.py
 
 ## Reproducibility
 
-The repository includes one-command pipeline execution, pinned dependencies, a fixed random seed, saved participant folds, inspectable intermediate datasets, reference verification targets, a run manifest with package versions, and detailed comments throughout the code.
+The pipeline uses pinned dependencies, a fixed random seed (42), saved participant folds, inspectable intermediate CSVs, reference verification targets, and a run manifest written by `modeling/train.py`.
 
 ### Expected artifact checks
 
@@ -301,25 +299,32 @@ glucose-gap/
 ├── README.md
 ├── LICENSE
 ├── requirements.txt
-├── run_tutorial.py
 ├── .gitignore
-├── HUPA-UCM Diabetes Dataset/       # ignored by Git
-├── feasibility_audit/
-├── modeling/
-├── tutorial/
+├── feasibility_audit/          # data audit and locked design
+├── modeling/                   # windows, features, CV, train, GRU
 ├── scripts/
+│   └── verify_results.py
 ├── tests/
-└── modeling_outputs/                # generated and ignored
+├── tutorial/                   # course assignment: walkthrough + slides
+└── modeling_outputs/           # generated and ignored
 ```
 
-## Tutorial and presentation
+## Course assignment (tutorial deliverables)
 
-| Document | Purpose |
-|----------|---------|
-| [`tutorial/TUTORIAL.md`](tutorial/TUTORIAL.md) | Step-by-step walkthrough and replicability evaluation |
-| [`tutorial/PRESENTATION.md`](tutorial/PRESENTATION.md) | 15-slide deck with speaker notes |
-| [`feasibility_audit/feasibility_report.md`](feasibility_audit/feasibility_report.md) | Locked experimental design |
-| [`tutorial/verification_targets.json`](tutorial/verification_targets.json) | Reference metrics for verification |
+The **codebase** is the project. The `tutorial/` folder holds the assignment submission materials that teach peers how to rebuild and understand this analysis:
+
+| Deliverable | Location |
+|-------------|----------|
+| Commented Python pipeline | `feasibility_audit/`, `modeling/` |
+| Step-by-step walkthrough + replicability evaluation | [`tutorial/TUTORIAL.md`](tutorial/TUTORIAL.md) |
+| Presentation + speaker notes | [`tutorial/PRESENTATION.md`](tutorial/PRESENTATION.md) |
+| Reference metrics for verification | [`tutorial/verification_targets.json`](tutorial/verification_targets.json) |
+
+Submit the GitHub repo link plus exported slides. Peers reproduce results by running the pipeline commands above, not a separate wrapper script.
+
+## Methods reference
+
+Locked experimental design: [`feasibility_audit/feasibility_report.md`](feasibility_audit/feasibility_report.md)
 
 ## Methodological tests
 
@@ -373,6 +378,6 @@ Data paper: [Campos et al., *Data in Brief*, 2024](https://doi.org/10.1016/j.dib
 
 ## License
 
-The tutorial code is released under the [MIT License](LICENSE).
+The project code is released under the [MIT License](LICENSE).
 
 The HUPA-UCM dataset is not distributed in this repository and remains governed by its original CC BY 4.0 license.

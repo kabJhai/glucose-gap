@@ -50,9 +50,13 @@ def generate_modeling_report(out_dir: Path = OUTPUT_DIR) -> str:
         )
 
     lines = [
-        "# Modeling Results",
+        "# Glucose Gap: What Is Lost Between Glucose Checks?",
         "",
-        "*Glucose Gap*: reproducible tutorial outputs.",
+        "### Predicting Hypoglycemia from Continuous and Intermittent Glucose Observations",
+        "",
+        "## Modeling Results",
+        "",
+        "Reproducible tutorial outputs.",
         "",
         "## Dataset windows (common 22-participant cohort)",
         "",
@@ -133,7 +137,7 @@ def generate_modeling_report(out_dir: Path = OUTPUT_DIR) -> str:
         "## Reproduce",
         "",
         "```bash",
-        "python run_tutorial.py --model-only",
+        "python -m modeling.train --skip-gru",
         "```",
         "",
     ]

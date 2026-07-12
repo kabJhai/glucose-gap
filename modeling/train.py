@@ -347,8 +347,10 @@ def main(skip_gru: bool = False) -> None:
     log.info("Outputs in %s", OUTPUT_DIR)
 
     from modeling.report import generate_modeling_report
+    from modeling.reproducibility import write_run_manifest
 
     generate_modeling_report(OUTPUT_DIR)
+    write_run_manifest(["modeling"])
     log.info("Wrote %s", OUTPUT_DIR / "modeling_results.md")
 
 

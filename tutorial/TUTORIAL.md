@@ -1,8 +1,8 @@
-# Glucose Gap
+# Glucose Gap: What Is Lost Between Glucose Checks?
 
-### Self-Learning Tutorial: What Is Lost Between Glucose Checks?
+### Predicting Hypoglycemia from Continuous and Intermittent Glucose Observations
 
-**Course assignment deliverable.** Teaches a healthcare ML/DL analysis others can rebuild from this repository.
+**Self-learning tutorial (course assignment).** This document teaches peers how to rebuild the Glucose Gap codebase. The project itself is the ML/DL pipeline in `feasibility_audit/` and `modeling/`.
 
 **Story:** Diabetes management is continuous decision-making between meals, insulin, and glucose checks. Continuous sensors see glucose history all the time; intermittent checking only gives snapshots. This tutorial turns that question, *what happens between checks?*, into a reproducible ML/DL pipeline: predict near-term hypoglycemia and measure what is lost when a model sees only intermittent scans instead of continuous CGM history.
 
@@ -71,7 +71,6 @@ brew install libomp
 
 ```bash
 python feasibility_audit/data_audit.py
-# or: python run_tutorial.py --audit-only
 ```
 
 **Read next:** `feasibility_audit/feasibility_report.md` (locked experimental design).
@@ -139,7 +138,7 @@ Pipeline per fold:
 | Sparse strata (has scan / no scan) | Separate windows where sparse features are informative vs empty |
 
 ```bash
-python run_tutorial.py --model-only
+python -m modeling.train --skip-gru
 # Human-readable summary:
 cat modeling_outputs/modeling_results.md
 ```
@@ -148,7 +147,6 @@ cat modeling_outputs/modeling_results.md
 
 | File | Tutorial focus |
 |------|----------------|
-| `run_tutorial.py` | One-command orchestration |
 | `feasibility_audit/data_audit.py` | Data understanding, leakage, cohort lock |
 | `modeling/config.py` | Single source of truth for hyperparameters |
 | `modeling/windows.py` | Window eligibility + paired table |
@@ -161,7 +159,7 @@ cat modeling_outputs/modeling_results.md
 
 ## 5. Expected results
 
-After `python run_tutorial.py --model-only`, headline numbers for your write-up:
+After `python -m modeling.train --skip-gru`, headline numbers for your write-up:
 
 | Metric | Dense XGBoost | Sparse XGBoost |
 |--------|--------------:|---------------:|
@@ -182,7 +180,7 @@ This section satisfies the assignment requirement to *evaluate tutorial effectiv
 
 | Mechanism | Benefit |
 |-----------|---------|
-| `python run_tutorial.py` | Single entry point; no manual step ordering |
+| `feasibility_audit/data_audit.py` + `modeling/train.py` | Direct pipeline entry points |
 | `modeling/config.py` | All hyperparameters in one file |
 | `RANDOM_SEED = 42` | Deterministic splits and model init |
 | `fold_assignments.csv` written once | Same CV across all experiments |
@@ -195,7 +193,7 @@ This section satisfies the assignment requirement to *evaluate tutorial effectiv
 - [ ] Clone repo; place HUPA-UCM dataset at expected path
 - [ ] Create venv; `pip install -r requirements.txt`
 - [ ] macOS: install `libomp` if XGBoost fails
-- [ ] Run `python run_tutorial.py`
+- [ ] Run `python feasibility_audit/data_audit.py` then `python -m modeling.train --skip-gru`
 - [ ] Verify `paired_windows.csv` has 1,260 rows (22-participant cohort, 30-min stride)
 - [ ] Verify `model_metrics.csv` contains `dense_xgb` and `sparse_xgb` rows
 - [ ] Compare `run_manifest.json` package versions if metrics differ slightly across machines
@@ -224,7 +222,7 @@ Use [`PRESENTATION.md`](PRESENTATION.md) for the 15-slide story arc (personal mo
 2. Walk one row of `paired_windows.csv`: input window, horizon, label (3 min)
 3. Show `model_metrics.csv` dense vs sparse AUPRC (3 min)
 4. Open one SHAP plot: what glucose history features matter (3 min)
-5. Discuss replicability: `run_manifest.json` + one-command rerun (2 min)
+5. Discuss replicability: `run_manifest.json` + pipeline commands (2 min)
 6. Q&A: "Would you trust sparse-only alerts in clinic?" (5 min)
 
 ## 8. How this differs from typical course examples
