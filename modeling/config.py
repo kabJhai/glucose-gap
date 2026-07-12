@@ -6,6 +6,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 AUDIT_DIR = PROJECT_ROOT / "feasibility_audit"
 DATASET_ROOT = PROJECT_ROOT / "HUPA-UCM Diabetes Dataset"
 OUTPUT_DIR = PROJECT_ROOT / "modeling_outputs"
+ARTIFACTS_DIR = OUTPUT_DIR / "artifacts"
 
 DENSE_HISTORY_H = 4
 SPARSE_HISTORY_H = 6

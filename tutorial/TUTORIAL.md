@@ -2,16 +2,11 @@
 
 ### Predicting Hypoglycemia from Continuous and Intermittent Glucose Observations
 
-**Self-learning tutorial (course assignment).** This document teaches peers how to rebuild the Glucose Gap codebase. The project itself is the ML/DL pipeline in `feasibility_audit/` and `modeling/`.
+This is the project walkthrough. The actual code lives in `feasibility_audit/` and `modeling/`. Run the pipeline from the repo root; there is no wrapper script.
 
 **Story:** Diabetes management is continuous decision-making between meals, insulin, and glucose checks. Continuous sensors see glucose history all the time; intermittent checking only gives snapshots. This tutorial turns that question, *what happens between checks?*, into a reproducible ML/DL pipeline: predict near-term hypoglycemia and measure what is lost when a model sees only intermittent scans instead of continuous CGM history.
 
-| Assignment part | Where it lives |
-|-----------------|----------------|
-| Python tutorial with detailed comments | `feasibility_audit/data_audit.py`, `modeling/*.py` (module docstrings + inline comments) |
-| Step-by-step presentation | [`PRESENTATION.md`](PRESENTATION.md) (import to Google Slides or PowerPoint) |
-| Replicability evaluation | [§6 below](#6-replicability-evaluation) + `run_manifest.json` |
-| Healthcare ML/DL analysis | HUPA-UCM FreeStyle CGM + scans; XGBoost + optional GRU |
+**Also in this folder:** [`PRESENTATION.md`](PRESENTATION.md) (slides + notes), [`verification_targets.json`](verification_targets.json) (reference metrics).
 
 ## 1. Learning goal
 
@@ -124,13 +119,20 @@ Pipeline per fold:
 
 ### Step 6: Experiment 2: Dense XGBoost vs GRU (`modeling/gru_model.py`)
 
-**Teaches:** when a small DL sequence model adds little over strong tabular features.
+**Teaches:** tabular engineered features vs direct sequence modeling on the same dense windows.
 
 - 1-layer GRU, 32 hidden units, 2-channel input (value + mask)
 - Value channel standardized using **training folds only**
-- Skips gracefully if PyTorch is not installed
+- **Apple Silicon (M1/M2/M3):** auto-uses PyTorch `mps` GPU; logs `device=mps` at startup
+- Per-epoch progress logging; early stopping (patience 8)
+- Use `--skip-gru` to skip this arm and run only Experiment 1 (~1 min)
 
-### Step 7: Sensitivities and reporting
+```bash
+python -m modeling.train              # full pipeline including GRU
+python -m modeling.train --skip-gru   # XGBoost only (faster)
+```
+
+### Step 7: Sensitivities, reporting, and verification
 
 | Analysis | Purpose |
 |----------|---------|
@@ -138,10 +140,11 @@ Pipeline per fold:
 | Sparse strata (has scan / no scan) | Separate windows where sparse features are informative vs empty |
 
 ```bash
-python -m modeling.train --skip-gru
-# Human-readable summary:
 cat modeling_outputs/modeling_results.md
+python scripts/verify_results.py
 ```
+
+`verify_results.py` checks models listed in `verified_models` inside `tutorial/verification_targets.json` (all XGBoost arms plus sensitivities). `dense_gru` is kept in the same file as an informational reference only and is reported but not verified.
 
 ## 4. Code map (where to read comments)
 
@@ -157,24 +160,56 @@ cat modeling_outputs/modeling_results.md
 | `modeling/train.py` | Full experiment orchestration |
 | `modeling/report.py` | Auto-generated results narrative |
 
-## 5. Expected results
+## 5. Verified results (full pipeline, seed 42)
 
-After `python -m modeling.train --skip-gru`, headline numbers for your write-up:
+After `python -m modeling.train` on Apple M2 (`device=mps` for GRU), pooled out-of-fold metrics:
 
-| Metric | Dense XGBoost | Sparse XGBoost |
-|--------|--------------:|---------------:|
-| AUPRC | 0.659 | 0.127 |
-| AUROC | 0.847 | 0.406 |
+### Experiment 1: Continuous vs intermittent (primary)
+
+| Model | AUPRC | AUROC |
+|--------|------:|------:|
+| Dense XGBoost | 0.659 | 0.847 |
+| Sparse XGBoost | 0.127 | 0.406 |
 
 | Sensitivity | Dense AUPRC | Sparse AUPRC |
 |-------------|------------:|-------------:|
-| Exclude 27/28 | 0.704 | 0.205 |
+| Exclude HUPA0027P/HUPA0028P | 0.704 | 0.205 |
+| Sparse, has prior scan | 0.136 | |
+| Sparse, no prior scan | 0.080 | |
 
-**Teaching point:** Even if sparse AUPRC is lower, quantify *how much* is lost (absolute difference, relative %, bootstrap CI). A small gap might justify scan-only deployments; a large gap argues for continuous CGM.
+**Paired comparison:** +0.532 AUPRC absolute gap. Bootstrap 95% CI: [0.447, 0.649].
 
-## 6. Replicability evaluation
+### Naive baselines (same windows and folds)
 
-This section satisfies the assignment requirement to *evaluate tutorial effectiveness for replicability*.
+| Baseline | AUPRC | AUROC |
+|----------|------:|------:|
+| Prevalence (positive rate) | 0.151 | — |
+| Latest scan (logistic OOF) | 0.194 | 0.565 |
+| Latest CGM value (logistic OOF) | 0.672 | 0.854 |
+
+Sparse XGBoost (0.127) is **below prevalence (~0.15)** and below the latest-scan rule. That supports the interpretation that intermittent snapshots lack timely trajectory information, not that labels were misaligned. A grouped bar chart is saved to `modeling_outputs/figures/baseline_comparison.png`.
+
+The latest-CGM baseline (0.672) slightly beats dense XGBoost (0.659), which is worth stating honestly: continuous access dominates, but most of that signal lives in the current reading rather than in richer engineered features on this cohort.
+
+```bash
+python scripts/verify_results.py
+# Verification PASSED: dense AUPRC 0.659, sparse AUPRC 0.127
+```
+
+### Experiment 2: Tabular vs sequence (dense only)
+
+| Model | AUPRC | AUROC | Recall | Precision |
+|--------|------:|------:|-------:|----------:|
+| Dense XGBoost | 0.659 | 0.847 | 0.589 | 0.589 |
+| Dense GRU | 0.569 | 0.828 | 0.721 | 0.391 |
+
+**Teaching point:** GRU is competitive but still below dense XGBoost on AUPRC. Engineered temporal summaries capture most of the signal on this small cohort; the GRU trades precision for recall at a fixed 0.5 threshold.
+
+**Teaching point (primary):** Quantify *how much* intermittent access loses (absolute difference, relative %, bootstrap CI). Here the gap is large: sparse retains only ~19% of dense AUPRC.
+
+## 6. Reproducibility
+
+This section describes what makes the pipeline straightforward to reproduce.
 
 ### What makes replication feasible
 
@@ -186,25 +221,27 @@ This section satisfies the assignment requirement to *evaluate tutorial effectiv
 | `fold_assignments.csv` written once | Same CV across all experiments |
 | Intermediate CSV/NPZ artifacts | Peers can inspect windows/features without re-running models |
 | `run_manifest.json` | Records Python version, platform, package versions, UTC timestamp |
+| `scripts/verify_results.py` | Confirms primary metrics match reference targets |
+| `tutorial/verification_targets.json` | Reference AUPRC/AUROC (XGBoost verified; GRU informational) |
 | Module docstrings | Explain *why* each step exists, not just *what* it does |
 
-### Replication checklist for a peer
+### Reproduction checklist
 
-- [ ] Clone repo; place HUPA-UCM dataset at expected path
+- [ ] Clone the repository; place the HUPA-UCM dataset inside the repo root
 - [ ] Create venv; `pip install -r requirements.txt`
 - [ ] macOS: install `libomp` if XGBoost fails
-- [ ] Run `python feasibility_audit/data_audit.py` then `python -m modeling.train --skip-gru`
+- [ ] Run `python feasibility_audit/data_audit.py` then `python -m modeling.train`
+- [ ] Run `python scripts/verify_results.py` (expect **Verification PASSED**)
 - [ ] Verify `paired_windows.csv` has 1,260 rows (22-participant cohort, 30-min stride)
-- [ ] Verify `model_metrics.csv` contains `dense_xgb` and `sparse_xgb` rows
-- [ ] Compare `run_manifest.json` package versions if metrics differ slightly across machines
-- [ ] Optional: run `python -m modeling.train` a second time; `fold_assignments.csv` must be unchanged
+- [ ] Verify `model_metrics.csv` contains `dense_xgb`, `sparse_xgb`, and `dense_gru` rows
+- [ ] Optional: re-run `python -m modeling.train`; `fold_assignments.csv` must be unchanged
 
 ### Known limitations (document honestly in presentation)
 
 1. **Small cohort (n=22 participants):** Participant-level bootstrap CIs are wide; external validation is needed.
 2. **Episode concentration:** Two participants contribute a large share of positive windows; sensitivity analysis is mandatory.
-3. **PyTorch optional:** GRU arm may be skipped; primary ML comparison does not require GPU.
-4. **Runtime:** Full audit ~8-9 min; modeling ~10+ min depending on hardware and SHAP.
+3. **GRU optional:** use `--skip-gru` for Experiment 1 only; full run uses MPS on Apple Silicon when available.
+4. **Runtime:** Full audit ~8-9 min; XGBoost modeling ~1 min; GRU adds ~2-5 min on MPS (longer on CPU).
 
 ### Tutorial design choices for different audiences
 
@@ -214,28 +251,27 @@ This section satisfies the assignment requirement to *evaluate tutorial effectiv
 | ML students | Grouped CV, leakage-safe features, AUPRC for imbalance, paired comparison |
 | Engineers | Artifact layout, manifest, one-command rerun, config-driven pipeline |
 
-## 7. Presentation and peer teaching
+## 7. Presentation
 
-Use [`PRESENTATION.md`](PRESENTATION.md) for the 15-slide story arc (personal motivation, audit, paired design, results, replicability). Suggested live demo flow (15-20 min):
+Use [`PRESENTATION.md`](PRESENTATION.md) for the 16-slide story arc (personal motivation, audit, paired design, results, reproducibility). Suggested live demo flow (15-20 min):
 
 1. Show feasibility figure: episode concentration (2 min)
 2. Walk one row of `paired_windows.csv`: input window, horizon, label (3 min)
-3. Show `model_metrics.csv` dense vs sparse AUPRC (3 min)
+3. Show `model_metrics.csv`: dense 0.659 vs sparse 0.127; mention GRU 0.569 (3 min)
 4. Open one SHAP plot: what glucose history features matter (3 min)
 5. Discuss replicability: `run_manifest.json` + pipeline commands (2 min)
 6. Q&A: "Would you trust sparse-only alerts in clinic?" (5 min)
 
-## 8. How this differs from typical course examples
+## 8. How this differs from typical examples
 
 - Uses **HUPA-UCM** (FreeStyle CGM + scans), not MIMIC vitals or ICU mortality
 - Compares **continuous vs intermittent access to the same sensor**, not multimodal ICU fusion
 - Emphasizes **paired, leakage-safe CV** and **participant-level bootstrap** rather than a single hold-out split
-- Includes **feasibility audit** as a first-class tutorial step (often skipped in coursework)
+- Includes **feasibility audit** as a first-class step (often skipped in similar analyses)
 
-## 9. Submission checklist
+## 9. Repository contents
 
-- [ ] GitHub repo (or Colab link) with this code
-- [ ] `tutorial/TUTORIAL.md` (this file)
-- [ ] `tutorial/PRESENTATION.md` exported to Slides/PowerPoint with speaker notes
-- [ ] `modeling_outputs/modeling_results.md` generated from a full run
-- [ ] Brief reflection: what was hardest to explain? what would you change for novices?
+- `tutorial/TUTORIAL.md` — this walkthrough
+- `tutorial/PRESENTATION.md` — slide outline and speaker notes
+- `modeling_outputs/modeling_results.md` — results narrative from a full run
+- `scripts/verify_results.py` — checks primary metrics against reference targets

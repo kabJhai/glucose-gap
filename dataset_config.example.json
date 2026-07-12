@@ -1,0 +1,13 @@
+{
+  "layout": "canonical",
+  "dataset_root": "data/my_cohort",
+  "description": "Generic layout for similar CGM + scan datasets. See README 'Bring your own dataset'.",
+  "canonical": {
+    "participants_subdir": "participants",
+    "glucose_filename": "glucose.csv"
+  },
+  "cohort": {
+    "exclude_sparse_no_scan": [],
+    "sensitivity_exclude": []
+  }
+}

@@ -26,7 +26,9 @@ Using paired prediction windows from the same participants, timestamps, labels, 
 | XGBoost | Continuous CGM history | 0.659 | 0.847 |
 | XGBoost | Intermittent scans | 0.127 | 0.406 |
 
-The intermittent model experienced an absolute AUPRC reduction of **0.532**, corresponding to an approximate **80.8% relative performance loss**.
+The intermittent model experienced an absolute AUPRC reduction of **0.532**. Sparse AUPRC (**0.127**) fell below the ~15% prevalence baseline and below a simple latest-scan risk rule (~0.19), indicating that occasional snapshots did not support reliable two-hour prediction in this setup.
+
+On the continuous side, a one-feature **latest-CGM baseline** (AUPRC **0.672**) slightly edges dense XGBoost (**0.659**): continuous access carries the predictive signal, and most of it is already in the current reading — engineered summaries do not add much on this small cohort.
 
 These are reference results using seed 42 (`python -m modeling.train --skip-gru`). Small differences may occur across software environments. Confirm with `python scripts/verify_results.py`.
 
@@ -49,10 +51,11 @@ How much does near-term hypoglycemia-prediction performance decline when a model
 ## Key findings
 
 1. Continuous glucose history carries substantially more predictive information than intermittent scan history.
-2. Sparse prediction is limited not only by the number of scans per day, but by whether a recent scan exists at the exact prediction time.
-3. Raw data auditing is essential. Using the preprocessed glucose table would have introduced interpolation-related label distortion.
-4. Patient-level grouped cross-validation is necessary to avoid optimistic performance estimates.
-5. A more complex deep-learning model is not automatically better than strong engineered temporal features.
+2. Sparse XGBoost performed near or below naive baselines (prevalence ~0.15; latest-scan rule ~0.19), not just below the dense model.
+3. Sparse prediction is limited not only by scan frequency, but by whether a recent scan exists at prediction time.
+4. Raw data auditing is essential. Using the preprocessed glucose table would have introduced interpolation-related label distortion.
+5. Patient-level grouped cross-validation is necessary to avoid optimistic performance estimates.
+6. A more complex model is not automatically better: sparse XGBoost underperformed a one-feature latest-scan baseline.
 
 ## Pipeline
 
@@ -273,6 +276,101 @@ python -m modeling.train               # includes GRU experiment
 python scripts/verify_results.py
 ```
 
+### 6. Run inference (deployed alert prototype)
+
+Training also writes **deployment artifacts** under `modeling_outputs/artifacts/`:
+
+| File | Purpose |
+|------|---------|
+| `dense_xgb.joblib` | Continuous CGM alert model + imputer + threshold |
+| `sparse_xgb.joblib` | Intermittent scan alert model |
+| `dense_gru.pt` | Optional sequence model (if GRU training ran) |
+| `artifact_manifest.json` | Training metadata and disclaimer |
+
+Score hypoglycemia risk for a participant (requires HUPA raw data on disk):
+
+```bash
+# All eligible 30-min windows for one participant
+python -m modeling.predict --participant HUPA0001P
+
+# Single prediction time (alert for next 2 hours)
+python -m modeling.predict --participant HUPA0001P --at "2018-10-01 14:30:00"
+
+# Write CSV alerts
+python -m modeling.predict --participant HUPA0001P --output alerts.csv
+
+# Include GRU arm
+python -m modeling.predict --participant HUPA0001P --models dense,sparse,gru
+```
+
+**Output columns:** `risk_dense`, `alert_dense`, `risk_sparse`, `alert_sparse` (probability 0–1 and binary alert at tuned threshold).
+
+**Inputs at inference time:** the pipeline reads the same FreeStyle CSV exports as training, builds a 4 h CGM history (dense) and 6 h scan history (sparse) strictly before each `prediction_time`, then scores the next **2 h** hypoglycemia risk.
+
+This is a **deployable research prototype**, not a clinically validated alert system. See [Responsible use](#responsible-use).
+
+## Bring your own dataset
+
+Glucose Gap is not locked to HUPA-UCM. Any dataset with **continuous CGM** plus **intermittent scans** from the same sensor can use the same pipeline via a dataset profile.
+
+### Supported layouts
+
+| Layout | Config | Expected structure |
+|--------|--------|-------------------|
+| `hupa_ucm` (default) | `dataset_config.hupa.json` | `Raw_Data/<participant>/free_style_sensor/*.csv` |
+| `canonical` | `dataset_config.example.json` | `participants/<participant>/glucose.csv` |
+
+### Canonical `glucose.csv` schema
+
+One file per participant:
+
+```csv
+timestamp,record_type,glucose_mg_dl
+2018-06-19 17:19:00,0,142
+2018-06-19 17:34:00,0,138
+2018-06-19 17:40:00,1,135
+```
+
+| Column | Meaning |
+|--------|---------|
+| `timestamp` | ISO datetime |
+| `record_type` | `0` = continuous CGM, `1` = user-initiated scan |
+| `glucose_mg_dl` | Glucose in mg/dL |
+
+Alternative: separate `historical_glucose_mg_dl` and `scan_glucose_mg_dl` columns (FreeStyle-style).
+
+### Configure and validate
+
+```bash
+# Copy and edit the example profile
+cp dataset_config.example.json my_dataset_config.json
+
+# Point at your data root
+python scripts/validate_dataset.py --dataset-config my_dataset_config.json --dataset-root data/my_cohort
+
+# Train on your cohort
+python -m modeling.train --dataset-config my_dataset_config.json --dataset-root data/my_cohort
+
+# Inference
+python -m modeling.predict --dataset-config my_dataset_config.json --participant P001
+```
+
+Environment overrides (optional):
+
+```bash
+export GLUCOSE_GAP_DATASET_CONFIG=my_dataset_config.json
+export GLUCOSE_GAP_DATASET_ROOT=/path/to/cohort
+```
+
+### Convert HUPA to canonical (template for other exports)
+
+```bash
+python scripts/export_canonical.py --output data/exported_hupa
+python -m modeling.train --dataset-config dataset_config.example.json --dataset-root data/exported_hupa
+```
+
+Set `cohort.exclude_sparse_no_scan` and `cohort.sensitivity_exclude` in your config for cohort rules on non-HUPA data.
+
 ## Reproducibility
 
 The pipeline uses pinned dependencies, a fixed random seed (42), saved participant folds, inspectable intermediate CSVs, reference verification targets, and a run manifest written by `modeling/train.py`.
@@ -289,6 +387,9 @@ A successful run should generate:
 - `oof_predictions.csv`
 - `modeling_results.md`
 - `run_manifest.json`
+- `artifacts/dense_xgb.joblib` (deployment model)
+- `artifacts/sparse_xgb.joblib`
+- `artifacts/artifact_manifest.json`
 
 The paired window table should contain approximately **1,260** eligible prediction windows, **190** positive windows, and **22** participants.
 
@@ -300,27 +401,24 @@ glucose-gap/
 ├── LICENSE
 ├── requirements.txt
 ├── .gitignore
-├── feasibility_audit/          # data audit and locked design
-├── modeling/                   # windows, features, CV, train, GRU
+├── dataset/                    # dataset adapters (HUPA + canonical layout)
+├── dataset_config.hupa.json    # default HUPA profile
+├── dataset_config.example.json # template for other CGM datasets
+├── modeling/                   # windows, features, CV, train, predict, GRU
+│   ├── train.py                # cross-validation + save deployment artifacts
+│   └── predict.py              # inference / alert scoring
 ├── scripts/
 │   └── verify_results.py
 ├── tests/
-├── tutorial/                   # course assignment: walkthrough + slides
+├── tutorial/                   # walkthrough, slides, verification targets
 └── modeling_outputs/           # generated and ignored
 ```
 
-## Course assignment (tutorial deliverables)
+## Documentation
 
-The **codebase** is the project. The `tutorial/` folder holds the assignment submission materials that teach peers how to rebuild and understand this analysis:
-
-| Deliverable | Location |
-|-------------|----------|
-| Commented Python pipeline | `feasibility_audit/`, `modeling/` |
-| Step-by-step walkthrough + replicability evaluation | [`tutorial/TUTORIAL.md`](tutorial/TUTORIAL.md) |
-| Presentation + speaker notes | [`tutorial/PRESENTATION.md`](tutorial/PRESENTATION.md) |
-| Reference metrics for verification | [`tutorial/verification_targets.json`](tutorial/verification_targets.json) |
-
-Submit the GitHub repo link plus exported slides. Peers reproduce results by running the pipeline commands above, not a separate wrapper script.
+- [`tutorial/TUTORIAL.md`](tutorial/TUTORIAL.md): how the pipeline works, step by step
+- [`tutorial/PRESENTATION.md`](tutorial/PRESENTATION.md): slide outline and speaker notes
+- [`tutorial/verification_targets.json`](tutorial/verification_targets.json): reference metrics for `scripts/verify_results.py`
 
 ## Methods reference
 
@@ -354,13 +452,26 @@ The tests validate:
 
 ## Future work
 
-- Add insulin and carbohydrate features after reconstructing pump timelines.
+- **Clinical validation:** external cohorts, prospective evaluation, calibration for real alerts.
+- **Model accuracy:** richer features (insulin, carbs), personalized models, longer horizons.
+- **Production deployment:** REST API wrapper, streaming CGM ingestion, FHIR integration.
 - Evaluate hyperglycemia prediction.
-- Test personalized participant-specific models.
 - Compare multiple prediction horizons.
-- Validate on a larger external CGM cohort.
 - Model irregular scan sequences with masking or time-aware neural networks.
 - Study realistic finger-prick schedules separately from user scan behavior.
+
+## Citing and extending this work
+
+This project is open source (MIT). If you fork, extend, or build on the Glucose Gap concept:
+
+1. **Cite or link** the repository: https://github.com/kabJhai/glucose-gap
+2. **Cite the dataset** when using HUPA-UCM (see [Dataset citation](#dataset-citation))
+3. **Fork and advance** — swap models, add features, validate clinically; keep attribution in README and `artifact_manifest.json`
+4. **Do not** present research-prototype alerts as clinical products without proper validation
+
+Example attribution line:
+
+> Based on [Glucose Gap](https://github.com/kabJhai/glucose-gap): measuring predictive loss between continuous CGM and intermittent glucose scans.
 
 ## Responsible use
 

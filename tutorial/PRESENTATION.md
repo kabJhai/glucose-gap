@@ -29,12 +29,10 @@ Predicting Hypoglycemia from Continuous and Intermittent Glucose Observations
 - Intermittent checking only gives **snapshots**
 - This tutorial turns that lived problem into a reproducible ML/DL analysis
 
-[Your name] · [Course] · [Date]
-
 **Speaker notes:**
 - Open personally: watching a parent manage type 1 diabetes means living in the gaps between measurements, wondering what happened in the hour since the last check.
 - That everyday anxiety became the research question: *what is lost when you only have snapshots instead of a continuous trace?*
-- Frame the deck: you learned the method by building it; this presentation teaches a peer the story, the science, and how to rerun it.
+- Frame the deck: it presents the story, the science, and how to rerun the analysis.
 - Close the slide with the one-sentence thesis if you have not put it on a title card.
 
 ## Slide 2: Clinical problem
@@ -98,7 +96,7 @@ Intermittent scan history -> Sparse model -+
 **Speaker notes:**
 - Audit took ~8-9 minutes; run `python feasibility_audit/data_audit.py`.
 - Two participants (HUPA0027P, HUPA0028P) contribute ~67% of hypoglycemia episodes. We pre-register a sensitivity analysis before seeing model results.
-- Teaching point for peers: always ask *who* is in your positive class before tuning hyperparameters.
+- Teaching point: always ask *who* is in your positive class before tuning hyperparameters.
 - See audit figures in `feasibility_audit/figures/` after a full run.
 
 ## Slide 6: Paired design
@@ -160,7 +158,7 @@ Scan count, last scan value, scan age, scan trend (last-two slope), missingness 
 **Speaker notes:**
 - Leakage prevention is the most important engineering detail in healthcare time-series ML.
 - Sparse windows with no prior scan exist; features are zero-filled and we stratify performance by `has_prior_scan` later.
-- GRU (secondary experiment) receives a 16-step sequence with `[value, mask]` channels. See `modeling/features.py`.
+- GRU (secondary experiment) receives a 16-step sequence with `[value, mask]` channels. On M2 Mac, PyTorch uses `mps` automatically.
 
 ## Slide 10: Models
 
@@ -175,28 +173,47 @@ Also report: AUROC, recall, precision, F1 (threshold tuned on inner validation)
 **Speaker notes:**
 - XGBoost with `scale_pos_weight` handles class imbalance; AUPRC is more informative than accuracy here.
 - GRU is intentionally small (1 layer, 32 hidden units): tutorial comparison, not a benchmark chase.
-- Underperformance of GRU vs XGBoost is a valid outcome on this sample size.
+- On Apple Silicon, training logs `device=mps`; expect per-epoch progress output.
+- Dense XGBoost (0.659 AUPRC) still edges the GRU (0.569) on this cohort; high GRU recall comes with lower precision.
 - Code: `modeling/train.py`.
 
-## Slide 11: Results
+## Slide 11: Continuous history predicts risk; intermittent scans do not
 
-| Model | AUPRC | AUROC |
-|-------|------:|------:|
-| **Dense XGBoost** | **0.659** | 0.847 |
-| **Sparse XGBoost** | 0.127 | 0.406 |
+| Model / baseline | AUPRC | AUROC | Recall |
+|------------------|------:|------:|-------:|
+| **Dense XGBoost** | **0.659** | 0.847 | 0.589 |
+| Latest CGM (naive) | 0.672 | 0.854 | — |
+| Prevalence baseline | 0.151 | — | — |
+| Latest scan (naive) | 0.194 | 0.565 | — |
+| **Sparse XGBoost** | **0.127** | 0.406 | 0.095 |
 
-**Dense minus sparse:** +0.532 AUPRC · **~81% relative loss** · Bootstrap 95% CI: [0.447, 0.649]
+**Dense minus sparse:** +0.532 AUPRC · Bootstrap 95% CI: [0.447, 0.649]
 
-**The story is not "sparse data is useless."**  
-**The story is: continuous access carries major predictive signal.**
+Sparse AUPRC is **below the ~15% prevalence baseline** and below a simple "lower latest scan → higher risk" rule. Recall falls from 58.9% to 9.5%.
 
 **Speaker notes:**
-- Lead with the interpretation, not just the table. Sparse scans retain only ~19% of dense AUPRC.
-- Bootstrap CI excludes zero; the gap is robust at the participant level, not just window level.
-- Sparse AUPRC > 0 means scans carry *some* signal, but far less than the continuous trajectory.
-- Verify locally: `python scripts/verify_results.py`.
+- Do not frame this as only "81% performance loss." The sparse model failed to achieve useful discrimination.
+- A one-feature latest-scan rule (AUPRC ~0.19) beats sparse XGBoost (0.127). Complexity did not help.
+- Dense XGBoost is strong; sparse is near or below naive benchmarks. That is the core finding.
+- Pipeline validation: labels aligned, `predict_proba[:, 1]` is the positive class, folds identical across models.
+- Sparse OOF probabilities are slightly miscalibrated (mean risk higher on negatives), but this is not a label-swap bug.
+- Latest-CGM naive baseline (0.672) slightly beats dense XGBoost (0.659): continuous signal is real, but mostly in the current reading on this cohort.
+- Verify primary metrics: `python scripts/verify_results.py`.
 
-## Slide 12: Sensitivity analyses
+## Slide 12: Results (Experiment 2)
+
+| Model | AUPRC | AUROC | Recall | Precision |
+|-------|------:|------:|-------:|----------:|
+| Dense XGBoost | 0.659 | 0.847 | 0.589 | 0.589 |
+| Dense GRU | 0.569 | 0.828 | 0.721 | 0.391 |
+
+**Speaker notes:**
+- Same dense windows; GRU sees raw 16-step sequences, XGBoost sees engineered summaries.
+- GRU is close on AUPRC but does not beat tabular features on this small dataset.
+- Higher GRU recall (0.72) at cost of precision (0.39) at fixed 0.5 threshold.
+- Valid tutorial outcome: more complex DL is not automatically better.
+
+## Slide 13: Sensitivity analyses
 
 **Remove the two dominant participants (HUPA0027P, HUPA0028P):**
 
@@ -216,9 +233,9 @@ Also report: AUROC, recall, precision, F1 (threshold tuned on inner validation)
 - Proves you checked whether results are participant-driven or scan-availability-driven.
 - Excluding 27/28 raises both arms but preserves the large dense advantage; this is not a single-person artifact.
 - No-scan stratum performs worst: without a recent scan, sparse features carry almost no signal.
-- This is analytical maturity: show your instructor you stress-tested the headline number.
+- This demonstrates the headline number was stress-tested rather than taken at face value.
 
-## Slide 13: Interpretation (SHAP)
+## Slide 14: Interpretation (SHAP)
 
 ![Dense XGBoost SHAP](../modeling_outputs/figures/shap_dense_xgb.png)
 
@@ -231,15 +248,15 @@ Also report: AUROC, recall, precision, F1 (threshold tuned on inner validation)
 - SHAP connects model output to clinical intuition: the model "pays attention" to patterns a careful caregiver would notice.
 - Point to 2-3 features on the figure; exact ranking may vary slightly across runs.
 - Sparse SHAP (`figures/shap_sparse_xgb.png`) often highlights scan recency, a different and weaker signal.
-- Generate figures with `python -m modeling.train --skip-gru`.
+- Generate figures with `python -m modeling.train` (or `--skip-gru` for XGBoost only).
 
-## Slide 14: Replicability
+## Slide 15: Replicability
 
 **Anyone following the tutorial can rerun and verify.**
 
 ```bash
 python feasibility_audit/data_audit.py
-python -m modeling.train --skip-gru
+python -m modeling.train
 python scripts/verify_results.py
 ```
 
@@ -251,15 +268,15 @@ python scripts/verify_results.py
 | Saved folds (assigned once) | `fold_assignments.csv` |
 | Intermediate artifacts | `paired_windows.csv`, feature CSVs, OOF predictions |
 | Environment record | `run_manifest.json` |
-| Peer checklist | [`TUTORIAL.md`](TUTORIAL.md) §6 |
+| Reproduction checklist | [`TUTORIAL.md`](TUTORIAL.md) §6 |
 
 **Speaker notes:**
-- Assignment requirement: evaluate tutorial effectiveness for replicability.
+- Reproducibility is a first-class goal of this project.
 - Strengths: scripted pipeline, pinned `requirements.txt`, verification script, saved folds.
 - Limitations peers will hit: manual dataset download, macOS `libomp` for XGBoost, optional PyTorch for GRU.
-- Re-running should reproduce identical `fold_assignments.csv` and metrics within ±0.02 AUPRC.
+- Re-running should reproduce identical `fold_assignments.csv` and primary metrics within ±0.02 AUPRC.
 
-## Slide 15: Conclusion
+## Slide 16: Conclusion
 
 **What this tutorial teaches:**
 
@@ -275,7 +292,7 @@ python scripts/verify_results.py
 - Return to the personal opening: the gap between checks is not just felt; it is quantifiable.
 - Invite discussion: "Would you trust a scan-only alert app?" "What scan frequency would close the gap?"
 - Leave repo link and dataset link on screen for Q&A.
-- Thank your peer/instructor.
+- Thank the audience and open the floor.
 
 ## Appendix: Slide-to-code mapping
 
@@ -286,9 +303,9 @@ python scripts/verify_results.py
 | 6-7 | `modeling/windows.py` |
 | 8 | `modeling/cv_splits.py` |
 | 9 | `modeling/features.py` |
-| 10-11 | `modeling/train.py` |
-| 13 | `modeling_outputs/figures/shap_*.png` |
-| 14 | [`TUTORIAL.md`](TUTORIAL.md) §6, `scripts/verify_results.py` |
+| 10-12 | `modeling/train.py`, `modeling/gru_model.py` |
+| 14 | `modeling_outputs/figures/shap_*.png` |
+| 15 | [`TUTORIAL.md`](TUTORIAL.md) §6, `scripts/verify_results.py` |
 
 ## Appendix: Anticipated questions
 

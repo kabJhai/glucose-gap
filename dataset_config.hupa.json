@@ -1,0 +1,14 @@
+{
+  "layout": "hupa_ucm",
+  "dataset_root": "HUPA-UCM Diabetes Dataset",
+  "description": "Default profile for the HUPA-UCM FreeStyle Libre export layout.",
+  "hupa_ucm": {
+    "raw_data_subdir": "Raw_Data",
+    "sensor_subdir": "free_style_sensor",
+    "participant_prefix": "HUPA"
+  },
+  "cohort": {
+    "exclude_sparse_no_scan": ["HUPA0015P"],
+    "sensitivity_exclude": ["HUPA0027P", "HUPA0028P"]
+  }
+}

@@ -22,9 +22,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "feasibility_aud
 from data_audit import (  # noqa: E402
     CGM_NOMINAL_INTERVAL_MIN,
     detect_episodes,
-    load_participant_freestyle,
     split_glucose_streams,
 )
+
+from dataset import load_participant_records
 
 from modeling.config import (
     DENSE_HISTORY_H,
@@ -51,7 +52,7 @@ def _miss_frac(start: pd.Timestamp, end: pd.Timestamp, obs_set: set) -> float:
 
 def build_participant_windows(pid: str) -> list[dict]:
     """Eligible windows for one participant at 30-min stride."""
-    raw = load_participant_freestyle(pid)
+    raw = load_participant_records(pid)
     cgm, scans, _ = split_glucose_streams(raw)
     if cgm.empty:
         return []
@@ -146,7 +147,7 @@ def participant_summaries(windows: pd.DataFrame) -> pd.DataFrame:
 
     ep_counts = {}
     for pid in summary.index:
-        raw = load_participant_freestyle(pid)
+        raw = load_participant_records(pid)
         cgm, _, _ = split_glucose_streams(raw)
         if cgm.empty:
             ep_counts[pid] = 0

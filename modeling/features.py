@@ -15,20 +15,22 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "feasibility_audit"))
-from data_audit import CGM_NOMINAL_INTERVAL_MIN, load_participant_freestyle, split_glucose_streams  # noqa: E402
+from data_audit import CGM_NOMINAL_INTERVAL_MIN  # noqa: E402
+
+from dataset import load_participant_records, split_glucose_streams
 
 from modeling.config import CGM_SLOT_MIN, DENSE_HISTORY_H, DENSE_SEQ_LEN, SPARSE_HISTORY_H
 
 
 def _cgm_series(pid: str) -> pd.Series:
-    raw = load_participant_freestyle(pid)
+    raw = load_participant_records(pid)
     cgm, _, _ = split_glucose_streams(raw)
     cgm = cgm.sort_values("timestamp").drop_duplicates("timestamp", keep="first")
     return cgm.set_index("timestamp")["glucose"]
 
 
 def _scan_frame(pid: str) -> pd.DataFrame:
-    raw = load_participant_freestyle(pid)
+    raw = load_participant_records(pid)
     _, scans, _ = split_glucose_streams(raw)
     if scans.empty:
         return pd.DataFrame(columns=["timestamp", "glucose"])

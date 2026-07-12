@@ -32,16 +32,30 @@ from sklearn.impute import SimpleImputer
 from sklearn.model_selection import train_test_split
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "feasibility_audit"))
-from data_audit import compute_cohort_counts, discover_participants, inventory_dataset  # noqa: E402
+from data_audit import compute_cohort_counts, inventory_dataset  # noqa: E402
 from data_audit import audit_participant_glucose, load_participant_freestyle  # noqa: E402
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from dataset import (
+    common_cohort_ids,
+    discover_participants,
+    get_dataset_config,
+    load_dataset_config,
+    sync_audit_dataset_root,
+)
+from modeling.baselines import (
+    compute_baselines,
+    save_comparison_figure,
+    sparse_probability_direction_check,
+)
 from modeling.config import (
     INNER_VAL_FRACTION,
     N_BOOTSTRAP,
     N_FOLDS,
     OUTPUT_DIR,
+    PROJECT_ROOT,
     RANDOM_SEED,
-    SENSITIVITY_EXCLUDE,
 )
 from modeling.cv_splits import get_or_create_folds, window_fold_column
 from modeling.features import build_feature_matrices
@@ -57,12 +71,15 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
 
 def _get_common_cohort() -> list[str]:
-    participants = discover_participants()
-    inventory = inventory_dataset(participants)
-    rows = [audit_participant_glucose(pid, load_participant_freestyle(pid)) for pid in participants]
-    glucose_summary = pd.DataFrame(rows)
-    cohort = compute_cohort_counts(inventory, glucose_summary)
-    return cohort["common_cohort_ids"]
+    cfg = get_dataset_config()
+    if cfg.layout == "hupa_ucm":
+        participants = discover_participants(cfg)
+        inventory = inventory_dataset(participants)
+        rows = [audit_participant_glucose(pid, load_participant_freestyle(pid)) for pid in participants]
+        glucose_summary = pd.DataFrame(rows)
+        cohort = compute_cohort_counts(inventory, glucose_summary)
+        return cohort["common_cohort_ids"]
+    return common_cohort_ids(cfg)
 
 
 def _new_xgb(scale_pos_weight: float):
@@ -202,7 +219,30 @@ def participant_metrics(meta: pd.DataFrame, y: np.ndarray, prob: np.ndarray, thr
     return pd.DataFrame(rows)
 
 
-def main(skip_gru: bool = False) -> None:
+def main(skip_gru: bool = False, dataset_config: str | None = None, dataset_root: str | None = None) -> None:
+    load_dataset_config(dataset_config)
+    if dataset_root:
+        from dataset import DatasetConfig, set_dataset_config
+
+        cfg = get_dataset_config()
+        root = Path(dataset_root)
+        if not root.is_absolute():
+            root = (PROJECT_ROOT / root).resolve()
+        cfg = DatasetConfig(
+            layout=cfg.layout,
+            root=root,
+            description=cfg.description,
+            hupa_ucm=cfg.hupa_ucm,
+            canonical=cfg.canonical,
+            cohort=cfg.cohort,
+            config_path=cfg.config_path,
+        )
+        set_dataset_config(cfg)
+        sync_audit_dataset_root(cfg.root)
+
+    cfg = get_dataset_config()
+    log.info("Dataset layout=%s root=%s", cfg.layout, cfg.root)
+
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     fig_dir = OUTPUT_DIR / "figures"
     fig_dir.mkdir(exist_ok=True)
@@ -234,10 +274,13 @@ def main(skip_gru: bool = False) -> None:
     np.savez_compressed(OUTPUT_DIR / "dense_sequences.npz", sequences=sequences,
                         window_id=windows["window_id"].values, y=y, fold_id=folds)
 
-    oof_store: dict[str, np.ndarray] = {}
-    thr_store: dict[str, np.ndarray] = {}
-    model_metric_rows: list[dict] = []
+    baseline_rows, baseline_probs = compute_baselines(y, folds, dense_df, sparse_df)
+    model_metric_rows: list[dict] = list(baseline_rows)
     fold_metric_frames: list[pd.DataFrame] = []
+    oof_store: dict[str, np.ndarray] = dict(baseline_probs)
+    thr_store: dict[str, np.ndarray] = {
+        name: np.full(len(y), 0.5) for name in baseline_probs
+    }
 
     def _record(name, oof, thr, fold_df, mask=None):
         oof_store[name] = oof
@@ -261,6 +304,19 @@ def main(skip_gru: bool = False) -> None:
     log.info("Experiment 1: sparse XGBoost")
     s_oof, s_thr, s_fold = run_xgb_cv("sparse_xgb", sparse_df, y, folds)
     r_sparse = _record("sparse_xgb", s_oof, s_thr, s_fold)
+    direction = sparse_probability_direction_check(y, s_oof)
+    log.info(
+        "Sparse OOF mean prob: positive=%.3f negative=%.3f (AUROC=%.3f)",
+        direction["mean_prob_positive"],
+        direction["mean_prob_negative"],
+        r_sparse["auroc"],
+    )
+    if r_sparse["auroc"] < 0.5:
+        log.warning(
+            "Sparse OOF AUROC is below 0.5. Pipeline checks passed; "
+            "this reflects weak/unstable sparse generalization, not a label swap. "
+            "Compare against baseline_latest_scan in model_metrics.csv."
+        )
     save_shap("sparse_xgb", sparse_df, y, sparse_cols, fig_dir)
 
     # 8. Sparse stratified by scan availability (reuses same sparse OOF predictions).
@@ -275,9 +331,9 @@ def main(skip_gru: bool = False) -> None:
         model_metric_rows.append(pooled)
 
     # 8. Sensitivity: exclude the two dominant participants (20-participant cohort).
-    sens_mask = ~windows["participant_id"].isin(SENSITIVITY_EXCLUDE).values
+    sens_mask = ~windows["participant_id"].isin(get_dataset_config().sensitivity_exclude).values
     if sens_mask.sum() > 0:
-        log.info("Sensitivity: exclude %s", SENSITIVITY_EXCLUDE)
+        log.info("Sensitivity: exclude %s", get_dataset_config().sensitivity_exclude)
         sd_oof, sd_thr, sd_fold = run_xgb_cv("sens_dense_xgb", dense_df, y, folds, mask=sens_mask)
         _record("sens_dense_xgb", sd_oof, sd_thr, sd_fold, mask=sens_mask)
         ss_oof, ss_thr, ss_fold = run_xgb_cv("sens_sparse_xgb", sparse_df, y, folds, mask=sens_mask)
@@ -289,7 +345,7 @@ def main(skip_gru: bool = False) -> None:
     else:
         try:
             from modeling.gru_model import train_gru_oof
-            log.info("Experiment 2: GRU")
+            log.info("Experiment 2: GRU (use --skip-gru to skip)")
             g_oof, _ = train_gru_oof(sequences, y, folds, N_FOLDS)
             g_thr = np.full(len(y), 0.5)
             pooled = pooled_metrics(y, g_oof, g_thr)
@@ -309,6 +365,7 @@ def main(skip_gru: bool = False) -> None:
     oof_long.to_csv(OUTPUT_DIR / "oof_predictions.csv", index=False)
 
     pd.DataFrame(model_metric_rows).to_csv(OUTPUT_DIR / "model_metrics.csv", index=False)
+    save_comparison_figure(pd.DataFrame(model_metric_rows), fig_dir / "baseline_comparison.png")
     if fold_metric_frames:
         pd.concat(fold_metric_frames, ignore_index=True).to_csv(
             OUTPUT_DIR / "fold_metrics.csv", index=False)
@@ -348,6 +405,13 @@ def main(skip_gru: bool = False) -> None:
 
     from modeling.report import generate_modeling_report
     from modeling.reproducibility import write_run_manifest
+    from modeling.artifacts import save_deployable_models
+
+    log.info("Saving deployable artifacts...")
+    saved = save_deployable_models(
+        dense_df, sparse_df, sequences, y, dense_cols, sparse_cols, skip_gru=skip_gru
+    )
+    log.info("Saved deployment models: %s", ", ".join(saved))
 
     generate_modeling_report(OUTPUT_DIR)
     write_run_manifest(["modeling"])
@@ -363,5 +427,15 @@ if __name__ == "__main__":
         action="store_true",
         help="Skip Experiment 2 GRU (faster; primary dense-vs-sparse comparison still runs)",
     )
+    parser.add_argument(
+        "--dataset-config",
+        default=None,
+        help="Path to dataset_config.json (default: dataset_config.hupa.json)",
+    )
+    parser.add_argument(
+        "--dataset-root",
+        default=None,
+        help="Override dataset root directory from config",
+    )
     args = parser.parse_args()
-    main(skip_gru=args.skip_gru)
+    main(skip_gru=args.skip_gru, dataset_config=args.dataset_config, dataset_root=args.dataset_root)

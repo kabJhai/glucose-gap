@@ -1,5 +1,5 @@
 {
-  "description": "Reference metrics from seed=42, Python 3.9, pinned requirements.txt. Compare after running python -m modeling.train --skip-gru",
+  "description": "Reference metrics from seed=42, pinned requirements.txt. Primary models verified by scripts/verify_results.py after python -m modeling.train",
   "cohort": {
     "n_participants": 22,
     "n_windows": 1260,
@@ -9,8 +9,17 @@
   "tolerance": {
     "auprc": 0.02,
     "auroc": 0.02,
-    "n_windows": 0
+    "n_windows": 0,
+    "n_active": 0
   },
+  "verified_models": [
+    "dense_xgb",
+    "sparse_xgb",
+    "sens_dense_xgb",
+    "sens_sparse_xgb",
+    "sparse_has_scan",
+    "sparse_no_scan"
+  ],
   "models": {
     "dense_xgb": {
       "auprc": 0.659,
@@ -35,6 +44,11 @@
     "sparse_no_scan": {
       "auprc": 0.080,
       "n_active": 178
+    },
+    "dense_gru": {
+      "auprc": 0.569,
+      "auroc": 0.828,
+      "note": "informational only; not checked by verify_results.py"
     }
   },
   "paired_comparison": {
