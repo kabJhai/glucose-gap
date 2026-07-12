@@ -1,0 +1,46 @@
+{
+  "description": "Reference metrics from seed=42, Python 3.9, pinned requirements.txt. Compare after running python -m modeling.train --skip-gru",
+  "cohort": {
+    "n_participants": 22,
+    "n_windows": 1260,
+    "n_positive": 190,
+    "positive_rate_pct": 15.1
+  },
+  "tolerance": {
+    "auprc": 0.02,
+    "auroc": 0.02,
+    "n_windows": 0
+  },
+  "models": {
+    "dense_xgb": {
+      "auprc": 0.659,
+      "auroc": 0.847
+    },
+    "sparse_xgb": {
+      "auprc": 0.127,
+      "auroc": 0.406
+    },
+    "sens_dense_xgb": {
+      "auprc": 0.704,
+      "n_active": 337
+    },
+    "sens_sparse_xgb": {
+      "auprc": 0.205,
+      "n_active": 337
+    },
+    "sparse_has_scan": {
+      "auprc": 0.136,
+      "n_active": 1082
+    },
+    "sparse_no_scan": {
+      "auprc": 0.080,
+      "n_active": 178
+    }
+  },
+  "paired_comparison": {
+    "absolute_difference": 0.532,
+    "relative_loss_pct": 80.8,
+    "boot_ci_lower": 0.447,
+    "boot_ci_upper": 0.649
+  }
+}

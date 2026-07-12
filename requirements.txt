@@ -1,0 +1,9 @@
+# Tutorial dependencies — pin for reproducibility
+numpy==1.26.4
+pandas==2.2.3
+matplotlib==3.9.4
+scikit-learn==1.5.2
+xgboost==2.1.4
+torch==2.5.1
+shap==0.46.0
+pyarrow==18.1.0

@@ -1,0 +1,42 @@
+# --- Dataset (download separately; see README) ---
+HUPA-UCM Diabetes Dataset/
+HUPA-UCM Diabetes Dataset.zip
+*.zip
+
+# --- Python environment ---
+.venv/
+venv/
+env/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# --- Generated audit outputs (re-run: python feasibility_audit/data_audit.py) ---
+feasibility_audit/*.csv
+feasibility_audit/figures/
+
+# --- Generated modeling outputs (re-run: python -m modeling.train) ---
+modeling_outputs/
+
+# --- Large intermediate caches ---
+*.parquet
+*.npz
+
+# --- Jupyter ---
+.ipynb_checkpoints/
