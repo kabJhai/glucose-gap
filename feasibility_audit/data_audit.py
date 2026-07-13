@@ -1398,7 +1398,7 @@ def compute_prediction_window_flow(
     """
     Count how prediction timestamps are filtered for one participant × configuration.
 
-    Candidate timestamps: 15-min grid from (t_min + history_h) to (t_max - horizon_h).
+    Candidate timestamps: 15-min grid from end of history window to start of horizon.
     Removals: input-window missingness, then future-window missingness (> threshold).
     """
     if cgm.empty:
@@ -1681,7 +1681,7 @@ def generate_feasibility_report(
         f"| All others ({n_other_part} participants) | {others_count} | "
         f"{100 * others_count / max(total_episodes_70, 1):.1f}% | 100% |",
         "",
-        f"**HUPA0027P + HUPA0028P = {top2_ep:,} episodes ({top2_pct:.1f}%).** "
+        f"**HUPA0027P and HUPA0028P account for {top2_ep:,} episodes ({top2_pct:.1f}%).** "
         "The key statistic is **episodes per active CGM day**, not total episodes alone:",
         "",
         "| Participant | Active CGM days | Episodes (30-min sep) | Episodes/active-day | Episodes (60-min sep) |",
@@ -1724,10 +1724,10 @@ def generate_feasibility_report(
         "### How candidate prediction timestamps are generated",
         "",
         "1. For each participant with historical CGM, deduplicate tipo-0 timestamps.",
-        "2. Build a **15-minute grid** from `(t_min + history)` to `(t_max − horizon)` for each configuration.",
+        "2. Build a **15-minute grid** from the end of the history window to the start of the horizon, for each configuration.",
         "3. For each grid time `t`, require:",
         "   - input window `[t − history, t)` has ≤20% missing 15-min CGM slots;",
-        "   - label window `[t, t + horizon)` has ≤20% missing 15-min CGM slots.",
+        "   - label window after prediction time has at most 20% missing 15-min CGM slots.",
         "4. Label is **positive** if any historical CGM value in the label window is <70 mg/dL.",
         "5. Scans for the sparse condition must have `timestamp < t` (strictly before prediction time).",
         "",
@@ -1973,7 +1973,7 @@ def generate_feasibility_report(
         "",
         "**Primary research question:** How much does near-term hypoglycemia-prediction performance decline when a model receives only intermittent user-initiated scans instead of continuous historical CGM?",
         "",
-        "**Tutorial contribution:** How to build a leakage-safe healthcare time-series prediction pipeline and measure the value of continuous versus intermittent observation.",
+        "**Pipeline goal:** Leakage-safe time-series setup for comparing continuous vs intermittent glucose observation.",
         "",
         "### Data and labeling",
         "",
@@ -2029,7 +2029,7 @@ def generate_feasibility_report(
         f"| Cohort | Common **{cohort['n_common_cohort']}** participants (primary); optional secondary analysis on all **{cohort['n_dense_cohort']}** for dense GRU |",
         "| Models | Dense XGBoost vs small GRU on same dense windows, folds, and outcome |",
         "| GRU design | **Intentionally small:** 1 GRU layer, 16 time steps, small hidden dim, dropout, class weights, early stopping, fixed seeds; **no architecture search** |",
-        "| Expectation | GRU may underperform XGBoost given modest sample size and participant heterogeneity — a valid tutorial result |",
+        "| Expectation | GRU may underperform XGBoost on this sample size; that is an expected outcome |",
         "",
         "### Validation and metrics",
         "",
@@ -2096,7 +2096,7 @@ def generate_feasibility_report(
         "",
         f"- Defined **common {cohort['n_common_cohort']}-participant cohort** for paired dense-vs-sparse comparison (same timestamps, labels, folds).",
         "- Split experiments: **Experiment 1** (dense vs sparse XGBoost, primary) and **Experiment 2** (dense XGBoost vs small GRU).",
-        "- Locked GRU as intentionally small tutorial model; no architecture search.",
+        "- Locked GRU as a small comparison model; no architecture search.",
         "- Added sensitivity checks: exclude HUPA0027P/HUPA0028P; sparse performance by scan availability.",
         "- Clarified conceptual framing: continuous vs intermittent **sensor access**, not separate measurement modalities.",
         "",
@@ -2122,7 +2122,7 @@ def main() -> None:
         "Episode separation = 30 min (primary), 60 min (sensitivity).",
         "Scan-CGM matching tolerance = 10 minutes.",
         "Missingness computed as fraction of expected 15-min CGM slots absent in window.",
-        "Prediction times: 15-min grid from (t_min + history) to (t_max − horizon) per configuration (audit); 30-min stride recommended for modeling.",
+        "Prediction times: 15-min grid from end of history to start of horizon per configuration (audit); 30-min stride recommended for modeling.",
         "Scans used for sparse condition only if timestamp < prediction_time.",
         "Preprocessed insulin zero = no event in 5-min bin (inferred).",
     ]

@@ -40,3 +40,8 @@ modeling_outputs/
 
 # --- Jupyter ---
 .ipynb_checkpoints/
+
+# --- Presentation (local only) ---
+tutorial/PRESENTATION.md
+*.pptx
+*.ppt

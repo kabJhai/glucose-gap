@@ -1,18 +1,12 @@
 #!/usr/bin/env python3
 """
-Finalized modeling pipeline for the dense-vs-sparse hypoglycemia study.
+Modeling pipeline: paired dense vs sparse hypoglycemia prediction.
 
-Enforced invariant: every headline dense-vs-sparse result uses the SAME
-participants, timestamps, labels, and held-out folds. Dense and sparse features
-are joined onto one master paired-window table without changing row count or
-order, folds are assigned once and reused, and preprocessing/threshold tuning
-are fit on training data only.
+Dense and sparse models share the same participants, timestamps, labels, and
+CV folds. Folds are assigned once; preprocessing and thresholds are fit on
+training data only.
 
-Regenerates from raw data (no manual edits):
-  paired_windows.csv, fold_assignments.csv, dense_features.csv,
-  sparse_features.csv, dense_sequences.npz, oof_predictions.csv,
-  model_metrics.csv, participant_metrics.csv, paired_comparison.csv,
-  bootstrap_paired_difference.csv, figures/shap_*.png
+Writes CSV/NPZ outputs under modeling_outputs/.
 """
 
 from __future__ import annotations
@@ -163,7 +157,7 @@ def run_xgb_cv(
 
 
 def pooled_metrics(y: np.ndarray, prob: np.ndarray, thr: np.ndarray, mask: np.ndarray | None = None):
-    """Pooled OOF metrics: threshold-free AUPRC/AUROC + per-row-threshold classification."""
+    """Pooled OOF metrics: threshold-free AUPRC/AUROC and per-row threshold classification."""
     from sklearn.metrics import confusion_matrix, f1_score, precision_score, recall_score
 
     idx = np.where(mask)[0] if mask is not None else np.where(~np.isnan(prob))[0]
@@ -266,7 +260,7 @@ def main(skip_gru: bool = False, dataset_config: str | None = None, dataset_root
     meta = windows[["window_id", "participant_id", "prediction_time", "target_hypo_2h",
                     "fold_id", "has_prior_scan", "scan_count_6h"]].reset_index(drop=True)
 
-    # 2-4. Features + sequences, joined without changing row order.
+    # 2-4. Features and sequences, joined without changing row order.
     log.info("Building features...")
     dense_df, sparse_df, sequences, dense_cols, sparse_cols = build_feature_matrices(windows)
     dense_df.to_csv(OUTPUT_DIR / "dense_features.csv", index=False)
@@ -295,7 +289,7 @@ def main(skip_gru: bool = False, dataset_config: str | None = None, dataset_root
             fold_metric_frames.append(fold_df)
         return pooled
 
-    # 6+7. Experiment 1: dense vs sparse XGBoost (paired).
+    # 6-7. Experiment 1: dense vs sparse XGBoost (paired).
     log.info("Experiment 1: dense XGBoost")
     d_oof, d_thr, d_fold = run_xgb_cv("dense_xgb", dense_df, y, folds)
     r_dense = _record("dense_xgb", d_oof, d_thr, d_fold)
@@ -313,9 +307,8 @@ def main(skip_gru: bool = False, dataset_config: str | None = None, dataset_root
     )
     if r_sparse["auroc"] < 0.5:
         log.warning(
-            "Sparse OOF AUROC is below 0.5. Pipeline checks passed; "
-            "this reflects weak/unstable sparse generalization, not a label swap. "
-            "Compare against baseline_latest_scan in model_metrics.csv."
+            "Sparse OOF AUROC is below 0.5. Checked alignment and class encoding; "
+            "compare against baseline_latest_scan in model_metrics.csv."
         )
     save_shap("sparse_xgb", sparse_df, y, sparse_cols, fig_dir)
 
@@ -376,7 +369,7 @@ def main(skip_gru: bool = False, dataset_config: str | None = None, dataset_root
     ], ignore_index=True)
     part.to_csv(OUTPUT_DIR / "participant_metrics.csv", index=False)
 
-    # 7. Paired comparison + participant-level bootstrap of the difference.
+    # 7. Paired comparison and participant-level bootstrap of the difference.
     d_auprc, s_auprc = r_dense["auprc"], r_sparse["auprc"]
     boot = bootstrap_participant_difference(meta, y, d_oof, s_oof, n_boot=N_BOOTSTRAP,
                                             seed=RANDOM_SEED, metric="auprc")

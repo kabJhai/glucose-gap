@@ -127,7 +127,7 @@ def write_artifact_manifest(
 ) -> None:
     manifest = {
         "project": "Glucose Gap",
-        "purpose": "Deployable hypoglycemia alert artifacts (research prototype, not clinically validated)",
+        "purpose": "Saved alert models (research prototype)",
         "saved_utc": datetime.now(timezone.utc).isoformat(),
         "random_seed": RANDOM_SEED,
         "horizon_hours": 2,
@@ -138,10 +138,7 @@ def write_artifact_manifest(
         "skip_gru": skip_gru,
         "citation": "https://github.com/kabJhai/glucose-gap",
         "license": "MIT",
-        "disclaimer": (
-            "For research and education only. Not validated for clinical decision-making, "
-            "insulin dosing, or real-time patient care."
-        ),
+        "disclaimer": "Research and education only. Not for clinical decision-making.",
     }
     (out_dir / "artifact_manifest.json").write_text(
         json.dumps(manifest, indent=2),

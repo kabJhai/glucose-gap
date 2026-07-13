@@ -4,9 +4,9 @@
 
 This is the project walkthrough. The actual code lives in `feasibility_audit/` and `modeling/`. Run the pipeline from the repo root; there is no wrapper script.
 
-**Story:** Diabetes management is continuous decision-making between meals, insulin, and glucose checks. Continuous sensors see glucose history all the time; intermittent checking only gives snapshots. This tutorial turns that question, *what happens between checks?*, into a reproducible ML/DL pipeline: predict near-term hypoglycemia and measure what is lost when a model sees only intermittent scans instead of continuous CGM history.
+**Story:** Diabetes management happens between meals, insulin, and glucose checks. Sensors stream history; finger checks and scans give snapshots. This walkthrough builds a pipeline that asks what you lose when the model only sees snapshots.
 
-**Also in this folder:** [`PRESENTATION.md`](PRESENTATION.md) (slides + notes), [`verification_targets.json`](verification_targets.json) (reference metrics).
+**Also here:** [`verification_targets.json`](verification_targets.json).
 
 ## 1. Learning goal
 
@@ -14,12 +14,12 @@ This is the project walkthrough. The actual code lives in `feasibility_audit/` a
 
 **Why it matters:** Real-world diabetes tools often have gaps between measurements. Before deploying an alert system, we need to know whether sparse observations are *good enough* or whether continuous streaming data is essential.
 
-**Conceptual framing (important):** Scans are not a separate biological modality. They are intermittent views of the *same* FreeStyle sensor signal. We compare **continuous access** vs **intermittent access**, not CGM vs finger sticks.
+**Same sensor, two access modes:** scans are not a separate modality. They are intermittent reads from the same FreeStyle stream. We compare continuous vs intermittent access, not CGM vs finger sticks.
 
 ## 2. Dataset and cohort
 
 - **Source:** HUPA-UCM Diabetes Dataset (`HUPA-UCM Diabetes Dataset/`)
-- **Streams per participant:** continuous CGM slots + user-initiated scans (same sensor family)
+- **Streams per participant:** continuous CGM slots and user-initiated scans (same sensor family)
 - **Primary cohort:** 22 participants with both dense CGM and scan activity (HUPA0015P excluded for scan sparsity)
 - **Locked design:** documented in [`feasibility_audit/feasibility_report.md`](../feasibility_audit/feasibility_report.md) §11
 
@@ -27,10 +27,10 @@ This is the project walkthrough. The actual code lives in `feasibility_audit/` a
 |-----------|-------|-----------|
 | Dense history | 4 h @ 15 min (16 slots) | Standard CGM context window |
 | Sparse history | 6 h of scans | Longer lookback because scans are sparse |
-| Prediction horizon | 2 h | Clinically actionable lead time |
+| Prediction horizon | 2 h | 2-hour warning window |
 | Window stride | 30 min | Balances sample size vs autocorrelation |
 | Outcome | Any glucose < 70 mg/dL in horizon | Standard hypoglycemia threshold |
-| Missingness cap | ≤20% in input + label windows | Avoid windows dominated by gaps |
+| Missingness cap | ≤20% in input and label windows | Avoid windows dominated by gaps |
 | CV | Grouped 5-fold by participant | Prevents same person in train and test |
 | Primary metric | AUPRC | Appropriate for ~15% positive rate |
 | Random seed | 42 | Fixed in `modeling/reproducibility.py` |
@@ -47,7 +47,8 @@ flowchart TD
     D --> E[Step 4: Feature engineering]
     E --> F[Step 5: Experiment 1 XGBoost]
     F --> G[Step 6: Experiment 2 GRU]
-    G --> H[Step 7: Report + manifest]
+    G --> H[Step 7: Report and manifest]
+    H --> I[Step 8: Alert demo (predict)]
 ```
 
 ### Step 0: Environment
@@ -62,19 +63,19 @@ brew install libomp
 
 ### Step 1: Feasibility audit (`feasibility_audit/data_audit.py`)
 
-**Teaches:** data inventory, leakage checks, episode concentration, window eligibility.
+**Covers:** data inventory, leakage checks, episode concentration, window eligibility.
 
 ```bash
 python feasibility_audit/data_audit.py
 ```
 
-**Read next:** `feasibility_audit/feasibility_report.md` (locked experimental design).
+See `feasibility_audit/feasibility_report.md` for the locked design.
 
-**Key audit outputs:** participant inventories, stride sensitivity, high-participant episode audit (HUPA0027P/HUPA0028P dominate positives).
+Audit outputs: participant inventories, stride sensitivity, episode concentration (HUPA0027P/HUPA0028P dominate positives).
 
 ### Step 2: Paired prediction windows (`modeling/windows.py`)
 
-**Teaches:** horizon-safe labeling, identical timestamps for dense and sparse models.
+**Covers:** horizon-safe labeling, identical timestamps for dense and sparse models.
 
 For each participant, the code walks a 30-minute grid. A window is eligible when:
 
@@ -86,13 +87,13 @@ For each participant, the code walks a 30-minute grid. A window is eligible when
 
 ### Step 3: Event-aware cross-validation (`modeling/cv_splits.py`)
 
-**Teaches:** grouped CV and why participant-level folds matter in longitudinal health data.
+**Covers:** grouped CV and why participant-level folds matter in longitudinal health data.
 
 Folds are assigned **once** from participant summaries (positive windows, total windows, episode count) and saved to `fold_assignments.csv`. Every model reuses this file: dense XGBoost, sparse XGBoost, GRU, and sensitivities all see identical held-out participants.
 
 ### Step 4: Feature engineering (`modeling/features.py`)
 
-**Teaches:** leakage prevention. All features use observations **strictly before** `prediction_time`.
+**Covers:** leakage prevention. All features use observations **strictly before** `prediction_time`.
 
 | Arm | Features | Examples |
 |-----|----------|----------|
@@ -104,7 +105,7 @@ Folds are assigned **once** from participant summaries (positive windows, total 
 
 ### Step 5: Experiment 1: Dense vs sparse XGBoost (`modeling/train.py`)
 
-**Teaches:** fair paired comparison, class imbalance, threshold tuning without leakage.
+**Covers:** fair paired comparison, class imbalance, threshold tuning without leakage.
 
 Pipeline per fold:
 
@@ -113,15 +114,13 @@ Pipeline per fold:
 3. Refit model on full training folds
 4. Predict held-out fold, producing out-of-fold (OOF) probabilities
 
-**Primary readout:** pooled AUPRC on OOF predictions + participant-level bootstrap CI on dense-sparse difference (`paired_comparison.csv`).
-
-**Interpretation aid:** SHAP plots in `modeling_outputs/figures/shap_*.png`.
+Main metrics: pooled AUPRC on OOF predictions and bootstrap CI on the dense-sparse gap (`paired_comparison.csv`). SHAP plots live in `modeling_outputs/figures/shap_*.png`.
 
 ### Step 6: Experiment 2: Dense XGBoost vs GRU (`modeling/gru_model.py`)
 
-**Teaches:** tabular engineered features vs direct sequence modeling on the same dense windows.
+**Covers:** tabular engineered features vs direct sequence modeling on the same dense windows.
 
-- 1-layer GRU, 32 hidden units, 2-channel input (value + mask)
+- 1-layer GRU, 32 hidden units, 2-channel input (value and mask)
 - Value channel standardized using **training folds only**
 - **Apple Silicon (M1/M2/M3):** auto-uses PyTorch `mps` GPU; logs `device=mps` at startup
 - Per-epoch progress logging; early stopping (patience 8)
@@ -136,7 +135,7 @@ python -m modeling.train --skip-gru   # XGBoost only (faster)
 
 | Analysis | Purpose |
 |----------|---------|
-| Exclude HUPA0027P + HUPA0028P | Test whether two dominant participants drive headline results |
+| Exclude HUPA0027P and HUPA0028P | Test whether two dominant participants drive headline results |
 | Sparse strata (has scan / no scan) | Separate windows where sparse features are informative vs empty |
 
 ```bash
@@ -146,18 +145,69 @@ python scripts/verify_results.py
 
 `verify_results.py` checks models listed in `verified_models` inside `tutorial/verification_targets.json` (all XGBoost arms plus sensitivities). `dense_gru` is kept in the same file as an informational reference only and is reported but not verified.
 
+### Step 8: Alert demo (`modeling/predict.py`)
+
+**Covers:** scoring saved models on one participant's raw FreeStyle exports. Training writes deployable artifacts; `predict` is inference only.
+
+**Prerequisite:** run `python -m modeling.train` first so `modeling_outputs/artifacts/` contains `dense_xgb.joblib`, `sparse_xgb.joblib`, and `artifact_manifest.json`.
+
+```bash
+# All eligible 30-min windows for one participant
+python -m modeling.predict --participant HUPA0001P
+
+# One prediction timestamp
+python -m modeling.predict --participant HUPA0001P --at "2018-06-26 03:19:00"
+
+# Save full table to CSV (includes label definition column)
+python -m modeling.predict --participant HUPA0001P --output alerts.csv
+
+# Add GRU arm if dense_gru.pt exists
+python -m modeling.predict --participant HUPA0001P --models dense,sparse,gru
+```
+
+**What it does:** reads the same raw CSVs as training, walks the 30-min grid for that participant, builds dense (4 h CGM) and sparse (6 h scan) features strictly before each `prediction_time`, and scores hypoglycemia risk for the next 2 h.
+
+**Example output** (HUPA0001P has only 8 eligible windows in this cohort):
+
+```
+Label (target_hypo_2h): Any historical CGM reading below 70 mg/dL in the 2 hours after prediction_time
+
+participant_id     prediction_time  target_hypo_2h                       target_hypo_2h_label  risk_dense  alert_dense  risk_sparse  alert_sparse
+     HUPA0001P 2018-06-26 02:49:00               0 no: no hypoglycemia (<70 mg/dL) in next 2h    0.466092            0     0.449481             0
+     HUPA0001P 2018-06-26 03:19:00               1   yes: hypoglycemia (<70 mg/dL) in next 2h    0.820975            1     0.801113             1
+     HUPA0001P 2018-06-26 03:49:00               1   yes: hypoglycemia (<70 mg/dL) in next 2h    0.910892            1     0.901052             1
+
+Not for clinical use. Research and education only.
+```
+
+**How to read it:**
+
+| Column | Meaning |
+|--------|---------|
+| `target_hypo_2h` | Ground-truth label (0/1) from CGM in the next 2 h — same rule as training |
+| `target_hypo_2h_label` | Readable wording for the label |
+| `risk_dense` / `risk_sparse` | Model probability of hypoglycemia in next 2 h |
+| `alert_dense` / `alert_sparse` | 1 if risk exceeds the F1-tuned threshold from training |
+
+**Teaching moment:** at `2018-06-26 03:19`, glucose was still 128 mg/dL but both models fired alerts. The label is 1 because CGM dropped to 65 mg/dL at 05:04 — about 1h 45m later. Those are **true positives**, not a labeling bug.
+
+At `02:49`, risk was elevated (~0.47) but below the alert threshold; the lowest CGM in the next 2 h was 72 mg/dL, so `target_hypo_2h = 0`.
+
+**Not clinical software.** Output ends with a disclaimer. This is a research prototype for education and reproducibility.
+
 ## 4. Code map (where to read comments)
 
 | File | Tutorial focus |
 |------|----------------|
 | `feasibility_audit/data_audit.py` | Data understanding, leakage, cohort lock |
 | `modeling/config.py` | Single source of truth for hyperparameters |
-| `modeling/windows.py` | Window eligibility + paired table |
+| `modeling/windows.py` | Window eligibility and paired table |
 | `modeling/cv_splits.py` | Event-aware fold balancing |
 | `modeling/features.py` | Dense/sparse/sequence features, horizon safety |
 | `modeling/metrics.py` | AUPRC, threshold tuning, participant bootstrap |
 | `modeling/gru_model.py` | Small GRU with mask channel |
 | `modeling/train.py` | Full experiment orchestration |
+| `modeling/predict.py` | Saved-model inference and alert demo |
 | `modeling/report.py` | Auto-generated results narrative |
 
 ## 5. Verified results (full pipeline, seed 42)
@@ -177,7 +227,7 @@ After `python -m modeling.train` on Apple M2 (`device=mps` for GRU), pooled out-
 | Sparse, has prior scan | 0.136 | |
 | Sparse, no prior scan | 0.080 | |
 
-**Paired comparison:** +0.532 AUPRC absolute gap. Bootstrap 95% CI: [0.447, 0.649].
+**Paired comparison:** dense AUPRC is 0.532 higher than sparse. Bootstrap 95% CI: [0.447, 0.649].
 
 ### Naive baselines (same windows and folds)
 
@@ -187,9 +237,13 @@ After `python -m modeling.train` on Apple M2 (`device=mps` for GRU), pooled out-
 | Latest scan (logistic OOF) | 0.194 | 0.565 |
 | Latest CGM value (logistic OOF) | 0.672 | 0.854 |
 
-Sparse XGBoost (0.127) is **below prevalence (~0.15)** and below the latest-scan rule. That supports the interpretation that intermittent snapshots lack timely trajectory information, not that labels were misaligned. A grouped bar chart is saved to `modeling_outputs/figures/baseline_comparison.png`.
+Sparse XGBoost (0.127) is below prevalence (~0.15) and below the latest-scan rule. Labels and timestamps line up; the sparse arm just does not have enough timely information. Bar chart: `modeling_outputs/figures/baseline_comparison.png`.
 
-The latest-CGM baseline (0.672) slightly beats dense XGBoost (0.659), which is worth stating honestly: continuous access dominates, but most of that signal lives in the current reading rather than in richer engineered features on this cohort.
+The latest-CGM baseline (0.672) slightly beats dense XGBoost (0.659). Continuous data helps, but on this cohort most of that help is just "what is the current glucose?" not the fancier summaries.
+
+**Note:** GRU is close but still below dense XGBoost on AUPRC. On this small cohort, engineered summaries beat the sequence model; GRU trades precision for recall at 0.5.
+
+**Note:** The sparse-vs-dense gap is the main number: 0.532 AUPRC, bootstrap CI [0.447, 0.649]. Sparse keeps only about 19% of dense AUPRC.
 
 ```bash
 python scripts/verify_results.py
@@ -203,10 +257,6 @@ python scripts/verify_results.py
 | Dense XGBoost | 0.659 | 0.847 | 0.589 | 0.589 |
 | Dense GRU | 0.569 | 0.828 | 0.721 | 0.391 |
 
-**Teaching point:** GRU is competitive but still below dense XGBoost on AUPRC. Engineered temporal summaries capture most of the signal on this small cohort; the GRU trades precision for recall at a fixed 0.5 threshold.
-
-**Teaching point (primary):** Quantify *how much* intermittent access loses (absolute difference, relative %, bootstrap CI). Here the gap is large: sparse retains only ~19% of dense AUPRC.
-
 ## 6. Reproducibility
 
 This section describes what makes the pipeline straightforward to reproduce.
@@ -215,11 +265,11 @@ This section describes what makes the pipeline straightforward to reproduce.
 
 | Mechanism | Benefit |
 |-----------|---------|
-| `feasibility_audit/data_audit.py` + `modeling/train.py` | Direct pipeline entry points |
+| `feasibility_audit/data_audit.py` and `modeling/train.py` | Direct pipeline entry points |
 | `modeling/config.py` | All hyperparameters in one file |
 | `RANDOM_SEED = 42` | Deterministic splits and model init |
 | `fold_assignments.csv` written once | Same CV across all experiments |
-| Intermediate CSV/NPZ artifacts | Peers can inspect windows/features without re-running models |
+| Intermediate CSV/NPZ artifacts | Inspect windows/features without re-running models |
 | `run_manifest.json` | Records Python version, platform, package versions, UTC timestamp |
 | `scripts/verify_results.py` | Confirms primary metrics match reference targets |
 | `tutorial/verification_targets.json` | Reference AUPRC/AUROC (XGBoost verified; GRU informational) |
@@ -232,46 +282,40 @@ This section describes what makes the pipeline straightforward to reproduce.
 - [ ] macOS: install `libomp` if XGBoost fails
 - [ ] Run `python feasibility_audit/data_audit.py` then `python -m modeling.train`
 - [ ] Run `python scripts/verify_results.py` (expect **Verification PASSED**)
+- [ ] Optional demo: `python -m modeling.predict --participant HUPA0001P` after training
 - [ ] Verify `paired_windows.csv` has 1,260 rows (22-participant cohort, 30-min stride)
 - [ ] Verify `model_metrics.csv` contains `dense_xgb`, `sparse_xgb`, and `dense_gru` rows
 - [ ] Optional: re-run `python -m modeling.train`; `fold_assignments.csv` must be unchanged
 
-### Known limitations (document honestly in presentation)
+### Known limitations (say these out loud)
 
 1. **Small cohort (n=22 participants):** Participant-level bootstrap CIs are wide; external validation is needed.
 2. **Episode concentration:** Two participants contribute a large share of positive windows; sensitivity analysis is mandatory.
 3. **GRU optional:** use `--skip-gru` for Experiment 1 only; full run uses MPS on Apple Silicon when available.
-4. **Runtime:** Full audit ~8-9 min; XGBoost modeling ~1 min; GRU adds ~2-5 min on MPS (longer on CPU).
+4. **Runtime:** Full audit ~8-9 min; XGBoost ~1 min; GRU adds ~2-5 min on MPS.
 
-### Tutorial design choices for different audiences
+## 7. Live demo
 
-| Audience | Emphasize |
-|----------|-----------|
-| Clinicians | Intermittent vs continuous monitoring trade-off; 2 h alert horizon |
-| ML students | Grouped CV, leakage-safe features, AUPRC for imbalance, paired comparison |
-| Engineers | Artifact layout, manifest, one-command rerun, config-driven pipeline |
-
-## 7. Presentation
-
-Use [`PRESENTATION.md`](PRESENTATION.md) for the 16-slide story arc (personal motivation, audit, paired design, results, reproducibility). Suggested live demo flow (15-20 min):
+Suggested flow for a 15–20 minute walkthrough:
 
 1. Show feasibility figure: episode concentration (2 min)
 2. Walk one row of `paired_windows.csv`: input window, horizon, label (3 min)
 3. Show `model_metrics.csv`: dense 0.659 vs sparse 0.127; mention GRU 0.569 (3 min)
-4. Open one SHAP plot: what glucose history features matter (3 min)
-5. Discuss replicability: `run_manifest.json` + pipeline commands (2 min)
-6. Q&A: "Would you trust sparse-only alerts in clinic?" (5 min)
+4. **Run `python -m modeling.predict --participant HUPA0001P`**: show risk scores, alerts, and `target_hypo_2h` labels; discuss June 26 true positives (3 min)
+5. Open one SHAP plot: what glucose history features matter (2 min)
+6. Discuss replicability: `run_manifest.json` and the pipeline commands (2 min)
+7. Q&A: "Would you trust sparse-only alerts in clinic?" (5 min)
 
 ## 8. How this differs from typical examples
 
-- Uses **HUPA-UCM** (FreeStyle CGM + scans), not MIMIC vitals or ICU mortality
+- Uses **HUPA-UCM** (FreeStyle CGM and scans), not MIMIC vitals or ICU mortality
 - Compares **continuous vs intermittent access to the same sensor**, not multimodal ICU fusion
-- Emphasizes **paired, leakage-safe CV** and **participant-level bootstrap** rather than a single hold-out split
-- Includes **feasibility audit** as a first-class step (often skipped in similar analyses)
+- Uses grouped CV and participant-level bootstrap, not a single random split
+- Includes a feasibility audit step up front (easy to skip in coursework, hard to skip in real work)
 
 ## 9. Repository contents
 
-- `tutorial/TUTORIAL.md` — this walkthrough
-- `tutorial/PRESENTATION.md` — slide outline and speaker notes
+- `tutorial/TUTORIAL.md` - this walkthrough
+- `tutorial/verification_targets.json` - reference metrics for `scripts/verify_results.py`
 - `modeling_outputs/modeling_results.md` — results narrative from a full run
 - `scripts/verify_results.py` — checks primary metrics against reference targets

@@ -2,9 +2,9 @@
 
 ### Predicting Hypoglycemia from Continuous and Intermittent Glucose Observations
 
-A reproducible healthcare ML/DL study measuring how much near-term hypoglycemia prediction performance is lost when a model sees only intermittent user-initiated glucose scans instead of continuous CGM history.
+A study of how much hypoglycemia prediction drops when a model sees intermittent glucose scans instead of continuous CGM history.
 
-This project uses the [HUPA-UCM Diabetes Dataset](https://data.mendeley.com/datasets/3hbcscwz44/1) and compares leakage-safe XGBoost and GRU models under continuous and intermittent glucose-observation conditions.
+Uses the [HUPA-UCM Diabetes Dataset](https://data.mendeley.com/datasets/3hbcscwz44/1). Compares XGBoost and a small GRU under continuous vs intermittent observation, with grouped cross-validation.
 
 ![Python](https://img.shields.io/badge/Python-3.11-blue)
 ![ML](https://img.shields.io/badge/ML-XGBoost-orange)
@@ -15,9 +15,7 @@ This project uses the [HUPA-UCM Diabetes Dataset](https://data.mendeley.com/data
 
 **Repository:** https://github.com/kabJhai/glucose-gap
 
-Measuring the predictive cost of intermittent glucose monitoring with leakage-safe machine learning and deep learning.
-
-## Headline result
+## Main result
 
 Using paired prediction windows from the same participants, timestamps, labels, and cross-validation folds:
 
@@ -28,7 +26,7 @@ Using paired prediction windows from the same participants, timestamps, labels, 
 
 The intermittent model experienced an absolute AUPRC reduction of **0.532**. Sparse AUPRC (**0.127**) fell below the ~15% prevalence baseline and below a simple latest-scan risk rule (~0.19), indicating that occasional snapshots did not support reliable two-hour prediction in this setup.
 
-On the continuous side, a one-feature **latest-CGM baseline** (AUPRC **0.672**) slightly edges dense XGBoost (**0.659**): continuous access carries the predictive signal, and most of it is already in the current reading — engineered summaries do not add much on this small cohort.
+On the continuous side, a one-feature **latest-CGM baseline** (AUPRC **0.672**) slightly edges dense XGBoost (**0.659**). Most of the continuous signal is already in the current reading; the extra engineered features do not help much on this small cohort.
 
 These are reference results using seed 42 (`python -m modeling.train --skip-gru`). Small differences may occur across software environments. Confirm with `python scripts/verify_results.py`.
 
@@ -48,7 +46,7 @@ The HUPA-UCM dataset uses FreeStyle Libre historical CGM readings and user-initi
 
 How much does near-term hypoglycemia-prediction performance decline when a model receives only intermittent user-initiated glucose scans instead of continuous historical CGM?
 
-## Key findings
+## What we found
 
 1. Continuous glucose history carries substantially more predictive information than intermittent scan history.
 2. Sparse XGBoost performed near or below naive baselines (prevalence ~0.15; latest-scan rule ~0.19), not just below the dense model.
@@ -201,7 +199,7 @@ XGBoost is the primary model because it handles nonlinear temporal features, per
 
 ### GRU
 
-The GRU is intentionally small: one recurrent layer, 16 time steps, small hidden dimension, dropout, class-weighted loss, early stopping, and fixed random seeds. The goal is a controlled comparison between engineered tabular features and direct sequence modeling, not state-of-the-art performance.
+The GRU is small on purpose: one layer, 16 steps, early stopping. It is there to compare sequence input against tabular features, not to chase SOTA.
 
 ## Evaluation metrics
 
@@ -282,7 +280,7 @@ Training also writes **deployment artifacts** under `modeling_outputs/artifacts/
 
 | File | Purpose |
 |------|---------|
-| `dense_xgb.joblib` | Continuous CGM alert model + imputer + threshold |
+| `dense_xgb.joblib` | Continuous CGM alert model, imputer, and threshold |
 | `sparse_xgb.joblib` | Intermittent scan alert model |
 | `dense_gru.pt` | Optional sequence model (if GRU training ran) |
 | `artifact_manifest.json` | Training metadata and disclaimer |
@@ -303,11 +301,11 @@ python -m modeling.predict --participant HUPA0001P --output alerts.csv
 python -m modeling.predict --participant HUPA0001P --models dense,sparse,gru
 ```
 
-**Output columns:** `risk_dense`, `alert_dense`, `risk_sparse`, `alert_sparse` (probability 0–1 and binary alert at tuned threshold).
+**Output columns:** `target_hypo_2h` (0/1), `target_hypo_2h_label` (readable outcome), `target_hypo_2h_definition` (label rule), `risk_dense`, `alert_dense`, `risk_sparse`, `alert_sparse` (probability 0–1 and binary alert at tuned threshold).
 
 **Inputs at inference time:** the pipeline reads the same FreeStyle CSV exports as training, builds a 4 h CGM history (dense) and 6 h scan history (sparse) strictly before each `prediction_time`, then scores the next **2 h** hypoglycemia risk.
 
-This is a **deployable research prototype**, not a clinically validated alert system. See [Responsible use](#responsible-use).
+This is a prototype alert pipeline, not a clinically validated product. See [Responsible use](#responsible-use).
 
 ## Bring your own dataset
 
@@ -401,23 +399,22 @@ glucose-gap/
 ├── LICENSE
 ├── requirements.txt
 ├── .gitignore
-├── dataset/                    # dataset adapters (HUPA + canonical layout)
+├── dataset/                    # dataset adapters (HUPA and canonical layout)
 ├── dataset_config.hupa.json    # default HUPA profile
 ├── dataset_config.example.json # template for other CGM datasets
 ├── modeling/                   # windows, features, CV, train, predict, GRU
-│   ├── train.py                # cross-validation + save deployment artifacts
+│   ├── train.py                # cross-validation; saves deployment artifacts
 │   └── predict.py              # inference / alert scoring
 ├── scripts/
 │   └── verify_results.py
 ├── tests/
-├── tutorial/                   # walkthrough, slides, verification targets
+├── tutorial/                   # walkthrough and verification targets
 └── modeling_outputs/           # generated and ignored
 ```
 
 ## Documentation
 
 - [`tutorial/TUTORIAL.md`](tutorial/TUTORIAL.md): how the pipeline works, step by step
-- [`tutorial/PRESENTATION.md`](tutorial/PRESENTATION.md): slide outline and speaker notes
 - [`tutorial/verification_targets.json`](tutorial/verification_targets.json): reference metrics for `scripts/verify_results.py`
 
 ## Methods reference
@@ -464,10 +461,9 @@ The tests validate:
 
 This project is open source (MIT). If you fork, extend, or build on the Glucose Gap concept:
 
-1. **Cite or link** the repository: https://github.com/kabJhai/glucose-gap
-2. **Cite the dataset** when using HUPA-UCM (see [Dataset citation](#dataset-citation))
-3. **Fork and advance** — swap models, add features, validate clinically; keep attribution in README and `artifact_manifest.json`
-4. **Do not** present research-prototype alerts as clinical products without proper validation
+1. Link the repo: https://github.com/kabJhai/glucose-gap
+2. Cite HUPA-UCM if you use their data ([Dataset citation](#dataset-citation))
+3. Fork and improve freely; do not sell unvalidated alerts as clinical software
 
 Example attribution line:
 

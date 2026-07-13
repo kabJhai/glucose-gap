@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Run hypoglycemia risk inference using saved deployment artifacts.
+Score hypoglycemia risk from saved models.
 
-This is a research prototype alert interface, not a clinically validated system.
 Train first: python -m modeling.train
+Not for clinical use.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 
 from modeling.artifacts import load_xgb_artifact
-from modeling.config import ARTIFACTS_DIR
+from modeling.config import ARTIFACTS_DIR, HORIZON_H, HYPO_THRESHOLD
 from modeling.features import build_feature_matrices
 from modeling.windows import build_window_table
 
@@ -29,9 +29,19 @@ log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
 DISCLAIMER = (
-    "Research prototype only. Not for clinical decision-making, insulin dosing, "
-    "or real-time patient care."
+    "Not for clinical use. Research and education only."
 )
+
+TARGET_HYPO_DEFINITION = (
+    f"Any historical CGM reading below {HYPO_THRESHOLD} mg/dL in the "
+    f"{HORIZON_H} hours after prediction_time"
+)
+
+
+def _target_hypo_label(value: int) -> str:
+    if value == 1:
+        return f"yes: hypoglycemia (<{HYPO_THRESHOLD} mg/dL) in next {HORIZON_H}h"
+    return f"no: no hypoglycemia (<{HYPO_THRESHOLD} mg/dL) in next {HORIZON_H}h"
 
 
 def _load_manifest(artifacts_dir: Path) -> dict:
@@ -58,6 +68,10 @@ def score_windows(
     ].copy()
     if "target_hypo_2h" in windows.columns:
         out["target_hypo_2h"] = windows["target_hypo_2h"].values
+        out["target_hypo_2h_label"] = [
+            _target_hypo_label(int(v)) for v in windows["target_hypo_2h"].values
+        ]
+        out["target_hypo_2h_definition"] = TARGET_HYPO_DEFINITION
 
     manifest = _load_manifest(artifacts_dir)
     out["horizon_hours"] = manifest.get("horizon_hours", 2)
@@ -91,6 +105,37 @@ def score_windows(
             out["threshold_dense_gru"] = gru.threshold
 
     return out
+
+
+def _display_columns(scores: pd.DataFrame) -> list[str]:
+    """Columns for terminal output: ids, label, then model risks and alerts."""
+    lead = ["participant_id", "prediction_time"]
+    if "target_hypo_2h" in scores.columns:
+        lead.extend(["target_hypo_2h", "target_hypo_2h_label"])
+    model_cols = [c for c in scores.columns if c.startswith(("risk_", "alert_"))]
+    return lead + model_cols
+
+
+def _log_alert_label_summary(scores: pd.DataFrame) -> None:
+    if "target_hypo_2h" not in scores.columns:
+        return
+    y = scores["target_hypo_2h"].astype(int)
+    for col in scores.columns:
+        if not col.startswith("alert_"):
+            continue
+        pred = scores[col].astype(int)
+        tp = int(((pred == 1) & (y == 1)).sum())
+        fp = int(((pred == 1) & (y == 0)).sum())
+        fn = int(((pred == 0) & (y == 1)).sum())
+        n_alert = int(pred.sum())
+        log.info(
+            "%s: %d alerts (%d true positive, %d false positive, %d missed hypo)",
+            col,
+            n_alert,
+            tp,
+            fp,
+            fn,
+        )
 
 
 def main() -> int:
@@ -197,9 +242,12 @@ def main() -> int:
         scores.to_csv(args.output, index=False)
         log.info("Wrote %d alert rows to %s", len(scores), args.output)
     else:
-        cols = [c for c in scores.columns if c.startswith(("risk_", "alert_"))]
-        print(scores[["participant_id", "prediction_time"] + cols].to_string(index=False))
+        if "target_hypo_2h_definition" in scores.columns:
+            print(f"Label (target_hypo_2h): {scores['target_hypo_2h_definition'].iloc[0]}\n")
+        print(scores[_display_columns(scores)].to_string(index=False))
         print(f"\n{DISCLAIMER}")
+
+    _log_alert_label_summary(scores)
 
     alerts = 0
     for col in scores.columns:

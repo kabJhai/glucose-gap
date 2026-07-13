@@ -52,7 +52,7 @@ def main() -> int:
     print(f"\nLayout: {cfg.layout}")
     print(f"Root:   {cfg.root}")
     print(f"Participants found: {len(participants)} (non-empty: {ok})")
-    print(f"Paired modeling cohort (CGM + scans): {len(cohort)}")
+    print(f"Paired modeling cohort (CGM and scans): {len(cohort)}")
     if cohort:
         print(f"  {', '.join(cohort[:8])}{'...' if len(cohort) > 8 else ''}")
     print("OK" if ok else "FAIL")

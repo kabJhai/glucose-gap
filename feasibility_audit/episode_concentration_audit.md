@@ -3,7 +3,7 @@
 ## Episode concentration
 
 - Total episodes (<70, 30-min separation): **1575**
-- HUPA0027P + HUPA0028P: **1050** (66.7% of all episodes)
+- HUPA0027P and HUPA0028P: **1050** (66.7% of all episodes)
 - Remaining 21 dense-cohort participants: **525**
 
 See `episode_concentration_by_participant.csv` and `figures/episode_counts_by_participant.png`.
@@ -85,7 +85,7 @@ Generated for HUPA0001P, HUPA0005P, HUPA0025P (no Dexcom folder).
 | Dense input | Previous **4 h** historical CGM at 15-min resolution (16 steps) |
 | Sparse input | User-initiated scans from previous **6 h** |
 | Outcome | Any raw CGM <70 mg/dL in next **2 h** |
-| Dense models | XGBoost + small GRU |
+| Dense models | XGBoost and small GRU |
 | Sparse model | XGBoost only (scan-summary features) |
 | Evaluation | Grouped 5-fold CV by participant; manual event stratification |
 | Window stride | **30 min** (reduce episode duplication) |

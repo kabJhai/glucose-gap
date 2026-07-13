@@ -1,4 +1,4 @@
-"""Generate human-readable modeling report for the tutorial."""
+"""Write modeling_results.md from saved metrics."""
 
 from __future__ import annotations
 
@@ -59,7 +59,7 @@ def generate_modeling_report(out_dir: Path = OUTPUT_DIR) -> str:
         "",
         "## Modeling Results",
         "",
-        "Reproducible tutorial outputs.",
+        "Results from the last `python -m modeling.train` run.",
         "",
         "## Dataset windows (common 22-participant cohort)",
         "",
@@ -81,7 +81,7 @@ def generate_modeling_report(out_dir: Path = OUTPUT_DIR) -> str:
 
     if paired:
         lines += [
-            f"**AUPRC advantage (dense − sparse): {paired.get('absolute_difference', float('nan')):+.3f}**",
+            f"**AUPRC advantage (dense minus sparse): {paired.get('absolute_difference', float('nan')):.3f}**",
             f"**Relative performance loss (sparse vs dense): {paired.get('relative_loss_pct', float('nan')):.1f}%**",
             f"**Participant-level bootstrap 95% CI on difference: "
             f"[{paired.get('boot_ci_lower', float('nan')):.3f}, {paired.get('boot_ci_upper', float('nan')):.3f}]**",
@@ -98,10 +98,13 @@ def generate_modeling_report(out_dir: Path = OUTPUT_DIR) -> str:
             metric_row("Latest scan (logistic OOF)", bl_scan),
             metric_row("Latest CGM value (logistic OOF)", bl_cgm),
             "",
-            "Sparse XGBoost AUPRC fell **below the prevalence baseline (~0.15)** and below a simple "
-            "\"lower latest scan → higher risk\" rule. That supports the interpretation that intermittent "
-            "snapshots did not preserve enough trajectory information for reliable two-hour prediction, "
-            "not that the paired pipeline misaligned labels.",
+            "Sparse XGBoost fell below the ~15% prevalence baseline and below a simple "
+            "latest-scan rule. Intermittent snapshots did not carry enough trajectory "
+            "for two-hour prediction in this setup.",
+            "",
+            f"Latest-CGM baseline AUPRC ({bl_cgm.get('auprc', float('nan')):.3f}) "
+            f"slightly edges dense XGBoost ({dense.get('auprc', float('nan')):.3f}): "
+            "most continuous signal is in the current reading on this cohort.",
             "",
             "See `figures/baseline_comparison.png` for AUPRC, recall, and F1 side by side.",
             "",
@@ -155,10 +158,10 @@ def generate_modeling_report(out_dir: Path = OUTPUT_DIR) -> str:
         "| `paired_windows.csv` | Master paired prediction windows |",
         "| `fold_assignments.csv` | Event-aware CV folds (assigned once) |",
         "| `dense_features.csv` / `sparse_features.csv` | Tabular features per window |",
-        "| `dense_sequences.npz` | 2-channel GRU sequences (value + mask) |",
+        "| `dense_sequences.npz` | 2-channel GRU sequences (value and mask) |",
         "| `oof_predictions.csv` | Out-of-fold probabilities (all models) |",
         "| `model_metrics.csv` | Pooled metrics for every experiment |",
-        "| `paired_comparison.csv` | Dense vs sparse paired comparison + bootstrap CI |",
+        "| `paired_comparison.csv` | Dense vs sparse comparison with bootstrap CI |",
         "| `figures/shap_*.png` | SHAP summaries for XGBoost |",
         "| `figures/baseline_comparison.png` | Dense/sparse vs naive baselines |",
         "| `run_manifest.json` | Seeds, config, package versions |",
@@ -175,7 +178,7 @@ def generate_modeling_report(out_dir: Path = OUTPUT_DIR) -> str:
         "python -m modeling.predict --participant HUPA0001P --at \"2018-10-01 14:30:00\" --output alerts.csv",
         "```",
         "",
-        "Research prototype only — not clinically validated.",
+        "Research prototype only. Not clinically validated.",
         "",
         "## Reproduce",
         "",

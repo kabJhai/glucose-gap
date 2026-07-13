@@ -1,7 +1,7 @@
 {
   "layout": "hupa_ucm",
   "dataset_root": "HUPA-UCM Diabetes Dataset",
-  "description": "Default profile for the HUPA-UCM FreeStyle Libre export layout.",
+  "description": "HUPA-UCM FreeStyle export layout (default).",
   "hupa_ucm": {
     "raw_data_subdir": "Raw_Data",
     "sensor_subdir": "free_style_sensor",

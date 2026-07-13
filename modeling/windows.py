@@ -1,12 +1,7 @@
-"""Build paired prediction windows for the common cohort.
+"""Build paired prediction windows.
 
-Tutorial step 2 (see tutorial/TUTORIAL.md §3):
-  - Walk a 30-minute prediction grid per participant
-  - Label = any CGM < 70 mg/dL in the next 2 hours (horizon)
-  - Require ≤20% missing slots in both input (4 h) and label windows
-  - Emit scan metadata so sparse models can stratify by prior-scan availability
-
-Every downstream model joins features onto this table without changing row order.
+Walks a 30-minute grid per participant. Label = any CGM < 70 mg/dL in the
+next 2 hours. Requires <=20% missing slots in input (4 h) and label windows.
 """
 
 from __future__ import annotations
