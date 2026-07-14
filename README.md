@@ -6,6 +6,10 @@ A study of how much hypoglycemia prediction drops when a model sees intermittent
 
 Uses the [HUPA-UCM Diabetes Dataset](https://data.mendeley.com/datasets/3hbcscwz44/1). Compares XGBoost and a small GRU under continuous vs intermittent observation, with grouped cross-validation.
 
+---
+**New here?** Start with the [tutorial](tutorial/TUTORIAL.md) for a full walkthrough of the codebase and a step-by-step reproduction guide.
+---
+
 ![Python](https://img.shields.io/badge/Python-3.11-blue)
 ![ML](https://img.shields.io/badge/ML-XGBoost-orange)
 ![DL](https://img.shields.io/badge/DL-GRU-red)
