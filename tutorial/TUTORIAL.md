@@ -48,7 +48,7 @@ flowchart TD
     E --> F[Step 5: Experiment 1 XGBoost]
     F --> G[Step 6: Experiment 2 GRU]
     G --> H[Step 7: Report and manifest]
-    H --> I[Step 8: Alert demo (predict)]
+    H --> I[Step 8: Alert demo]
 ```
 
 ### Step 0: Environment
@@ -287,31 +287,12 @@ This section describes what makes the pipeline straightforward to reproduce.
 - [ ] Verify `model_metrics.csv` contains `dense_xgb`, `sparse_xgb`, and `dense_gru` rows
 - [ ] Optional: re-run `python -m modeling.train`; `fold_assignments.csv` must be unchanged
 
-### Known limitations (say these out loud)
+### Known limitations
 
 1. **Small cohort (n=22 participants):** Participant-level bootstrap CIs are wide; external validation is needed.
 2. **Episode concentration:** Two participants contribute a large share of positive windows; sensitivity analysis is mandatory.
 3. **GRU optional:** use `--skip-gru` for Experiment 1 only; full run uses MPS on Apple Silicon when available.
 4. **Runtime:** Full audit ~8-9 min; XGBoost ~1 min; GRU adds ~2-5 min on MPS.
-
-## 7. Live demo
-
-Suggested flow for a 15–20 minute walkthrough:
-
-1. Show feasibility figure: episode concentration (2 min)
-2. Walk one row of `paired_windows.csv`: input window, horizon, label (3 min)
-3. Show `model_metrics.csv`: dense 0.659 vs sparse 0.127; mention GRU 0.569 (3 min)
-4. **Run `python -m modeling.predict --participant HUPA0001P`**: show risk scores, alerts, and `target_hypo_2h` labels; discuss June 26 true positives (3 min)
-5. Open one SHAP plot: what glucose history features matter (2 min)
-6. Discuss replicability: `run_manifest.json` and the pipeline commands (2 min)
-7. Q&A: "Would you trust sparse-only alerts in clinic?" (5 min)
-
-## 8. How this differs from typical examples
-
-- Uses **HUPA-UCM** (FreeStyle CGM and scans), not MIMIC vitals or ICU mortality
-- Compares **continuous vs intermittent access to the same sensor**, not multimodal ICU fusion
-- Uses grouped CV and participant-level bootstrap, not a single random split
-- Includes a feasibility audit step up front (easy to skip in coursework, hard to skip in real work)
 
 ## 9. Repository contents
 
