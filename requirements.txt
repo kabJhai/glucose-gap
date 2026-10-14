@@ -6,4 +6,4 @@ scikit-learn==1.5.2
 xgboost==2.1.4
 torch==2.5.1
 shap==0.46.0
-pyarrow==18.1.0
+pyarrow==23.0.1
